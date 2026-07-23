@@ -1,9 +1,9 @@
 import type {
   Participant as PrismaParticipant,
-  QueueItem as PrismaQueueItem,
   Room as PrismaRoom,
-} from "@prisma/client";
-import type { ParticipantWithPresence, QueueItem, Room } from "@cueball/shared";
+} from "@prisma/client"
+import type { ParticipantWithPresence, QueueItem, Room } from "@cueball/shared"
+import type { QueueItemWithVotes } from "./queueService.js"
 
 export function serializeRoom(room: PrismaRoom): Room {
   return {
@@ -16,7 +16,7 @@ export function serializeRoom(room: PrismaRoom): Room {
     playbackState: room.playbackState,
     playbackPosition: room.playbackPosition,
     createdAt: room.createdAt.toISOString(),
-  };
+  }
 }
 
 export function serializeParticipant(
@@ -31,10 +31,10 @@ export function serializeParticipant(
     isHost: participant.isHost,
     joinedAt: participant.joinedAt.toISOString(),
     connected,
-  };
+  }
 }
 
-export function serializeQueueItem(item: PrismaQueueItem): QueueItem {
+export function serializeQueueItem(item: QueueItemWithVotes): QueueItem {
   return {
     id: item.id,
     roomId: item.roomId,
@@ -45,5 +45,9 @@ export function serializeQueueItem(item: PrismaQueueItem): QueueItem {
     score: item.score,
     playedAt: item.playedAt ? item.playedAt.toISOString() : null,
     createdAt: item.createdAt.toISOString(),
-  };
+    votes: item.votes.map((vote) => ({
+      participantId: vote.participantId,
+      value: vote.value as 1 | -1,
+    })),
+  }
 }

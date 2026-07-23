@@ -3,7 +3,7 @@ import type {
   PlaybackState,
   QueueItem,
   Room,
-} from "./types.js";
+} from "./types.js"
 
 export const SocketEvents = {
   RoomJoin: "room:join",
@@ -13,7 +13,6 @@ export const SocketEvents = {
 
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
-  QueueUpdate: "queue:update",
 
   PlaybackPlay: "playback:play",
   PlaybackPause: "playback:pause",
@@ -21,67 +20,70 @@ export const SocketEvents = {
   PlaybackSync: "playback:sync",
 
   ControlHandoff: "control:handoff",
-} as const;
+} as const
 
 export interface RoomJoinPayload {
-  roomCode: string;
-  guestName: string;
+  roomCode: string
+  guestName: string
 }
 
 export interface RoomStatePayload {
-  room: Room;
-  participants: ParticipantWithPresence[];
-  queue: QueueItem[];
+  room: Room
+  participants: ParticipantWithPresence[]
+  queue: QueueItem[]
 }
 
 export interface RoomJoinResult {
-  room: Room;
-  participant: ParticipantWithPresence;
+  room: Room
+  participant: ParticipantWithPresence
   /** Persisted client-side and sent as the socket auth token on reconnect. */
-  participantToken: string;
-  participants: ParticipantWithPresence[];
-  queue: QueueItem[];
+  participantToken: string
+  participants: ParticipantWithPresence[]
+  queue: QueueItem[]
 }
 
-export interface RoomJoinError {
-  error: string;
+export interface ActionError {
+  error: string
+}
+
+export interface ActionOk {
+  ok: true
 }
 
 export interface CreateRoomRequest {
-  hostName: string;
-  roomName?: string;
+  hostName: string
+  roomName?: string
 }
 
 export interface CreateRoomResponse {
-  room: Room;
-  participant: ParticipantWithPresence;
+  room: Room
+  participant: ParticipantWithPresence
   /** Persisted client-side and sent as the socket auth token on reconnect. */
-  participantToken: string;
+  participantToken: string
 }
 
 export interface QueueAddPayload {
-  roomId: string;
-  youtubeUrl: string;
+  youtubeUrl: string
 }
 
 export interface QueueVotePayload {
-  queueItemId: string;
-  value: 1 | -1;
+  queueItemId: string
+  value: 1 | -1
 }
 
 export interface PlaybackSeekPayload {
-  roomId: string;
-  position: number;
+  roomId: string
+  position: number
 }
 
 export interface PlaybackSyncPayload {
-  trackId: string | null;
-  position: number;
-  isPlaying: boolean;
-  playbackState: PlaybackState;
+  trackId: string | null
+  position: number
+  isPlaying: boolean
+  playbackState: PlaybackState
 }
 
 export interface ControlHandoffPayload {
-  roomId: string;
-  toParticipantId: string;
+  roomId: string
+  toParticipantId: string
 }

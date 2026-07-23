@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 210 40% 98%;
+    --surface: 0 0% 100%;
+    --surface-hover: 210 40% 96%;
+    --border: 214 32% 91%;
+    --text: 222 47% 11%;
+    --muted: 215 16% 47%;
+    --primary: 239 84% 67%;
+    --primary-hover: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --danger: 0 72% 51%;
+    --upvote: 142 71% 35%;
+    --downvote: 0 72% 51%;
+  }
+
+  /*
+   * Class-based, not a `prefers-color-scheme` media query: the toggle needs
+   * to be able to override the OS preference once the user picks explicitly.
+   * ThemeProvider applies/removes this class (and a pre-hydration inline
+   * script in layout.tsx sets it before first paint to avoid a flash).
+   */
+  .dark {
+    --bg: 222 39% 7%;
+    --surface: 222 33% 12%;
+    --surface-hover: 222 30% 16%;
+    --border: 222 25% 20%;
+    --text: 220 33% 93%;
+    --muted: 215 20% 65%;
+    --primary: 234 89% 74%;
+    --primary-hover: 230 94% 82%;
+    --primary-foreground: 222 47% 6%;
+    --danger: 0 91% 71%;
+    --upvote: 141 75% 61%;
+    --downvote: 0 91% 71%;
+  }
+
+  body {
+    @apply bg-bg text-text font-sans antialiased;
+  }
+}
