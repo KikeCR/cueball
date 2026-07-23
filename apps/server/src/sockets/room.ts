@@ -95,8 +95,8 @@ export function registerRoomHandlers(io: Server): void {
           await markConnected(room.id, participant.id)
 
           const state = await getRoomState(room.id)
-          const self = state.participants.find((p) => p.id === participant.id)
-          if (!self) {
+          const self = state?.participants.find((p) => p.id === participant.id)
+          if (!state || !self) {
             ack?.({ error: "Failed to join room" })
             return
           }

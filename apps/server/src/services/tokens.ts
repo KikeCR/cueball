@@ -31,3 +31,29 @@ export function verifyParticipantToken(
     return null
   }
 }
+
+interface YoutubeOAuthStatePayload {
+  type: "youtube-oauth-state"
+  roomId: string
+}
+
+/** Proves the OAuth callback corresponds to a /connect redirect we issued for this room. */
+export function signYoutubeOAuthState(roomId: string): string {
+  const payload: YoutubeOAuthStatePayload = {
+    type: "youtube-oauth-state",
+    roomId,
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "10m" })
+}
+
+export function verifyYoutubeOAuthState(
+  state: string,
+): { roomId: string } | null {
+  try {
+    const decoded = jwt.verify(state, JWT_SECRET) as YoutubeOAuthStatePayload
+    if (decoded.type !== "youtube-oauth-state") return null
+    return { roomId: decoded.roomId }
+  } catch {
+    return null
+  }
+}

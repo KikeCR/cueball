@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { Users, ListVideo, Plus } from "lucide-react"
+import { Users, ListVideo, Plus, Youtube } from "lucide-react"
 import type { RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
@@ -10,6 +10,9 @@ import { JoinRoomForm } from "../../../components/JoinRoomForm"
 import { ParticipantList } from "../../../components/ParticipantList"
 import { AddVideoForm } from "../../../components/AddVideoForm"
 import { QueueList } from "../../../components/QueueList"
+import { ConnectYoutubeButton } from "../../../components/ConnectYoutubeButton"
+import { PlaylistShare } from "../../../components/PlaylistShare"
+import { CopyButton } from "../../../components/CopyButton"
 import { Card } from "../../../components/ui/card"
 import { cn } from "../../../utils/cn"
 
@@ -22,6 +25,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     connected,
     reconnecting,
     voteOnQueueItem,
+    removeQueueItem,
   } = useRoom()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -75,6 +79,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
     })
   }
 
+  const handleRemove = (queueItemId: string) => {
+    removeQueueItem(queueItemId).catch((err: unknown) => {
+      console.error("Failed to remove queue item", err)
+    })
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
@@ -91,11 +101,36 @@ function RoomView({ roomCode }: { roomCode: string }) {
             <span className="font-mono font-bold tracking-widest text-text">
               {roomCode}
             </span>
+            <CopyButton value={roomCode} label="Copy room code" />
           </p>
         </div>
       </div>
 
       <div className="flex flex-col gap-5">
+        <Card className="flex flex-col gap-3">
+          <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
+            <Youtube className="size-3.5" /> YouTube playlist
+          </h2>
+          {room?.youtubePlaylistId ? (
+            <PlaylistShare playlistId={room.youtubePlaylistId} />
+          ) : self.isHost ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted">
+                Connect your YouTube account to keep a real playlist in sync
+                with this queue.
+              </p>
+              <ConnectYoutubeButton
+                roomId={room?.id ?? ""}
+                roomCode={roomCode}
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted">
+              Waiting for the host to connect a YouTube playlist.
+            </p>
+          )}
+        </Card>
+
         <Card className="flex flex-col gap-3">
           <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             <Users className="size-3.5" /> Participants
@@ -107,7 +142,14 @@ function RoomView({ roomCode }: { roomCode: string }) {
           <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             <Plus className="size-3.5" /> Add a video
           </h2>
-          <AddVideoForm />
+          {room?.youtubePlaylistId ? (
+            <AddVideoForm />
+          ) : (
+            <p className="text-sm text-muted">
+              Videos can be added once the host connects a YouTube playlist
+              above.
+            </p>
+          )}
         </Card>
 
         <Card className="flex flex-col gap-3">
@@ -119,6 +161,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             participants={participants}
             selfId={self.id}
             onVote={handleVote}
+            onRemove={handleRemove}
           />
         </Card>
       </div>

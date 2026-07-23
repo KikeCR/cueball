@@ -30,6 +30,26 @@ import { decodeJwtPayload } from "../utils/jwt"
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
 const RECONNECT_TIMEOUT_MS = 4000
 
+function emitAction(
+  socket: Socket | null,
+  event: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error("Not connected"))
+      return
+    }
+    socket.emit(event, payload, (result: ActionOk | ActionError) => {
+      if ("error" in result) {
+        reject(new Error(result.error))
+        return
+      }
+      resolve()
+    })
+  })
+}
+
 interface RoomContextValue {
   connected: boolean
   reconnecting: boolean
@@ -41,6 +61,7 @@ interface RoomContextValue {
   joinAsGuest: (guestName: string) => Promise<void>
   addToQueue: (youtubeUrl: string) => Promise<void>
   voteOnQueueItem: (queueItemId: string, value: 1 | -1) => Promise<void>
+  removeQueueItem: (queueItemId: string) => Promise<void>
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -135,47 +156,22 @@ export function RoomProvider({
 
   const addToQueue = useCallback(
     (youtubeUrl: string) =>
-      new Promise<void>((resolve, reject) => {
-        const socket = socketRef.current
-        if (!socket) {
-          reject(new Error("Not connected"))
-          return
-        }
-        socket.emit(
-          SocketEvents.QueueAdd,
-          { youtubeUrl },
-          (result: ActionOk | ActionError) => {
-            if ("error" in result) {
-              reject(new Error(result.error))
-              return
-            }
-            resolve()
-          },
-        )
-      }),
+      emitAction(socketRef.current, SocketEvents.QueueAdd, { youtubeUrl }),
     [],
   )
 
   const voteOnQueueItem = useCallback(
     (queueItemId: string, value: 1 | -1) =>
-      new Promise<void>((resolve, reject) => {
-        const socket = socketRef.current
-        if (!socket) {
-          reject(new Error("Not connected"))
-          return
-        }
-        socket.emit(
-          SocketEvents.QueueVote,
-          { queueItemId, value },
-          (result: ActionOk | ActionError) => {
-            if ("error" in result) {
-              reject(new Error(result.error))
-              return
-            }
-            resolve()
-          },
-        )
+      emitAction(socketRef.current, SocketEvents.QueueVote, {
+        queueItemId,
+        value,
       }),
+    [],
+  )
+
+  const removeQueueItem = useCallback(
+    (queueItemId: string) =>
+      emitAction(socketRef.current, SocketEvents.QueueRemove, { queueItemId }),
     [],
   )
 
@@ -194,6 +190,7 @@ export function RoomProvider({
         joinAsGuest,
         addToQueue,
         voteOnQueueItem,
+        removeQueueItem,
       }}
     >
       {children}

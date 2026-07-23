@@ -9,6 +9,7 @@ export interface Room {
   currentTrackId: string | null
   playbackState: PlaybackState
   playbackPosition: number
+  youtubePlaylistId: string | null
   createdAt: string
 }
 
