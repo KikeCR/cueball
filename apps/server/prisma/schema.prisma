@@ -47,11 +47,13 @@ model Room {
   youtubeTokenExpiresAt DateTime?
   youtubePlaylistId     String?
 
-  createdAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  lastActiveAt DateTime @default(now())
 
   participants Participant[] @relation("RoomParticipants")
   queueItems   QueueItem[]   @relation("RoomQueueItems")
 
+  @@index([lastActiveAt])
   @@map("rooms")
 }
 

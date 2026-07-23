@@ -35,7 +35,7 @@ export function PlaylistShare({ playlistId }: PlaylistShareProps) {
       )}
       <div className="flex flex-col gap-1">
         <p className="text-sm text-muted">
-          Live on YouTube — anyone can open the playlist directly.
+          Live on YouTube. Anyone can open the playlist directly.
         </p>
         <a
           href={url}

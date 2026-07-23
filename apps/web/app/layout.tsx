@@ -15,9 +15,6 @@ export const metadata = {
   description: "Shared watch-party queue for YouTube",
 }
 
-// Runs before hydration so the correct theme class is on <html> for the
-// very first paint — otherwise a device in dark mode would flash light
-// until ThemeProvider's effect catches up after mount.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {

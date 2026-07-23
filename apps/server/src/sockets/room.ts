@@ -7,7 +7,11 @@ import {
   type RoomStatePayload,
 } from "@cueball/shared"
 import { markConnected, markDisconnected } from "../redis/presence.js"
-import { addParticipant, getRoomState } from "../services/roomService.js"
+import {
+  addParticipant,
+  getRoomState,
+  touchRoomActivity,
+} from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
 import {
   signParticipantToken,
@@ -32,6 +36,7 @@ async function reconnect(
   socket.data.roomId = roomId
   await socket.join(roomId)
   await markConnected(roomId, participant.id)
+  await touchRoomActivity(roomId)
   return true
 }
 

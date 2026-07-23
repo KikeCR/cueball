@@ -27,7 +27,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Starts at a fixed value so the first client render matches the server;
   // the real theme (stored choice, else OS preference) is resolved after
   // mount. The inline script in layout.tsx already applied the right class
-  // before paint, so this doesn't cause a visible flash — it just brings
+  // before paint, so this doesn't cause a visible flash, it just brings
   // React's own state in sync with what's already on screen.
   const [theme, setTheme] = useState<Theme>("light")
 
