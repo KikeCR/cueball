@@ -53,6 +53,14 @@ export async function addVideoToPlaylist(
   })
 }
 
+export async function removeVideoFromPlaylist(
+  room: Room,
+  playlistItemId: string,
+): Promise<void> {
+  const youtube = getAuthorizedYoutubeClient(room)
+  await youtube.playlistItems.delete({ id: playlistItemId })
+}
+
 /** Naive full resync: fine for a demo-sized queue, would want move-diffing to stay under quota at scale. */
 export async function syncPlaylistOrder(roomId: string): Promise<void> {
   const room = await prisma.room.findUnique({ where: { id: roomId } })

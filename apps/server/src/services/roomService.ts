@@ -85,7 +85,7 @@ export async function addParticipant(params: {
 }
 
 export async function getRoomState(roomId: string) {
-  const room = await prisma.room.findUniqueOrThrow({
+  const room = await prisma.room.findUnique({
     where: { id: roomId },
     include: {
       participants: true,
@@ -95,6 +95,8 @@ export async function getRoomState(roomId: string) {
       },
     },
   })
+  if (!room) return null
+
   const connected = await getConnectedParticipantIds(roomId)
   return {
     room: serializeRoom(room),

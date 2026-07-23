@@ -13,6 +13,7 @@ export const SocketEvents = {
 
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
+  QueueRemove: "queue:remove",
 
   PlaybackPlay: "playback:play",
   PlaybackPause: "playback:pause",
@@ -69,6 +70,10 @@ export interface QueueAddPayload {
 export interface QueueVotePayload {
   queueItemId: string
   value: 1 | -1
+}
+
+export interface QueueRemovePayload {
+  queueItemId: string
 }
 
 export interface PlaybackSeekPayload {

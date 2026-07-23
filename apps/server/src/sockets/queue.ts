@@ -4,12 +4,20 @@ import {
   type ActionError,
   type ActionOk,
   type QueueAddPayload,
+  type QueueRemovePayload,
   type QueueVotePayload,
 } from "@cueball/shared"
-import { addQueueItem, castVote } from "../services/queueService.js"
+import {
+  addQueueItem,
+  castVote,
+  removeQueueItem,
+} from "../services/queueService.js"
 import { fetchVideoMetadata, parseYoutubeVideoId } from "../services/youtube.js"
 import { prisma } from "../services/prisma.js"
-import { addVideoToPlaylist } from "../services/youtubePlaylist.js"
+import {
+  addVideoToPlaylist,
+  removeVideoFromPlaylist,
+} from "../services/youtubePlaylist.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
 import type { RoomSocket } from "./types.js"
@@ -99,6 +107,58 @@ export function registerQueueHandlers(io: Server): void {
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
           schedulePlaylistSync(roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.QueueRemove,
+      (payload: QueueRemovePayload, ack?: Ack) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room before removing videos" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const result = await removeQueueItem({
+            queueItemId: payload.queueItemId,
+            roomId,
+            participantId,
+            isHost: participant.isHost,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+
+          if (result.removed.youtubePlaylistItemId) {
+            const room = await prisma.room.findUnique({ where: { id: roomId } })
+            if (room?.youtubePlaylistId) {
+              try {
+                await removeVideoFromPlaylist(
+                  room,
+                  result.removed.youtubePlaylistItemId,
+                )
+              } catch (err) {
+                console.error(
+                  `Failed to remove queue item from YouTube playlist for room ${roomId}`,
+                  err,
+                )
+              }
+            }
+          }
         })()
       },
     )

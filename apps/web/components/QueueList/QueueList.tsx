@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { cn } from "../../utils/cn"
 
@@ -7,6 +7,7 @@ interface QueueListProps {
   participants: ParticipantWithPresence[]
   selfId: string | null
   onVote: (queueItemId: string, value: 1 | -1) => void
+  onRemove: (queueItemId: string) => void
 }
 
 export function QueueList({
@@ -14,6 +15,7 @@ export function QueueList({
   participants,
   selfId,
   onVote,
+  onRemove,
 }: QueueListProps) {
   if (queue.length === 0) {
     return (
@@ -22,6 +24,10 @@ export function QueueList({
       </p>
     )
   }
+
+  const self = selfId
+    ? (participants.find((p) => p.id === selfId) ?? null)
+    : null
 
   return (
     <ol className="flex flex-col gap-3">
@@ -32,6 +38,9 @@ export function QueueList({
         const myVote = selfId
           ? (item.votes.find((v) => v.participantId === selfId)?.value ?? null)
           : null
+        const canRemove =
+          self !== null &&
+          (self.id === item.addedByParticipantId || self.isHost)
 
         return (
           <li
@@ -92,6 +101,17 @@ export function QueueList({
                 <ChevronDown className="size-4" />
               </button>
             </div>
+
+            {canRemove && (
+              <button
+                type="button"
+                aria-label="Remove from queue"
+                onClick={() => onRemove(item.id)}
+                className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
+              >
+                <X className="size-4" />
+              </button>
+            )}
           </li>
         )
       })}

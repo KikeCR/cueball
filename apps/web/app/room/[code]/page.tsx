@@ -12,6 +12,7 @@ import { AddVideoForm } from "../../../components/AddVideoForm"
 import { QueueList } from "../../../components/QueueList"
 import { ConnectYoutubeButton } from "../../../components/ConnectYoutubeButton"
 import { PlaylistShare } from "../../../components/PlaylistShare"
+import { CopyButton } from "../../../components/CopyButton"
 import { Card } from "../../../components/ui/card"
 import { cn } from "../../../utils/cn"
 
@@ -24,6 +25,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     connected,
     reconnecting,
     voteOnQueueItem,
+    removeQueueItem,
   } = useRoom()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -77,6 +79,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
     })
   }
 
+  const handleRemove = (queueItemId: string) => {
+    removeQueueItem(queueItemId).catch((err: unknown) => {
+      console.error("Failed to remove queue item", err)
+    })
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
@@ -93,6 +101,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             <span className="font-mono font-bold tracking-widest text-text">
               {roomCode}
             </span>
+            <CopyButton value={roomCode} label="Copy room code" />
           </p>
         </div>
       </div>
@@ -152,6 +161,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             participants={participants}
             selfId={self.id}
             onVote={handleVote}
+            onRemove={handleRemove}
           />
         </Card>
       </div>

@@ -70,3 +70,30 @@ export async function castVote(params: {
     })
   })
 }
+
+export type RemoveQueueItemResult =
+  { removed: QueueItemWithVotes } | { error: string }
+
+/** Only the participant who added a video, or the host, may remove it. */
+export async function removeQueueItem(params: {
+  queueItemId: string
+  roomId: string
+  participantId: string
+  isHost: boolean
+}): Promise<RemoveQueueItemResult> {
+  const item = await prisma.queueItem.findFirst({
+    where: { id: params.queueItemId, roomId: params.roomId },
+    include: { votes: true },
+  })
+  if (!item) {
+    return { error: "Video not found in this room's queue" }
+  }
+  if (item.addedByParticipantId !== params.participantId && !params.isHost) {
+    return {
+      error: "Only the person who added this, or the host, can remove it",
+    }
+  }
+
+  await prisma.queueItem.delete({ where: { id: item.id } })
+  return { removed: item }
+}
