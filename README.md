@@ -1,19 +1,19 @@
 # CueBall
 
 A shared watch-party queue for YouTube. Multiple people join a room, queue
-up videos, vote to reorder the queue, and watch in sync — play, pause, and
+up videos, vote to reorder the queue, and watch in sync: play, pause, and
 seek are mirrored across everyone in the room in real time.
 
 Built as a portfolio piece focused on real-time systems, WebSocket
 architecture, and a two-tier auth model (guest-first, optional accounts).
 
-> Status: early scaffolding — monorepo structure, Docker Compose, and the
+> Status: early scaffolding. Monorepo structure, Docker Compose, and the
 > initial Prisma schema are in place. Room/queue/playback logic is next.
 
 ## How it works
 
 - A host creates a room and gets a shareable join code/link.
-- Guests join with just a nickname — no account required. People who want
+- Guests join with just a nickname, no account required. People who want
   to persist room history or host recurring rooms can create a real
   account (JWT-based) instead.
 - Anyone in the room can paste a YouTube URL to add it to the queue.
@@ -32,7 +32,7 @@ architecture, and a two-tier auth model (guest-first, optional accounts).
 
 - **Server**: Node.js, Express, Socket.io
 - **Database**: PostgreSQL via Prisma
-- **Cache / pub-sub**: Redis — caches live room state (current track,
+- **Cache / pub-sub**: Redis, caches live room state (current track,
   playback position, controller) for instant reconnects, and backs the
   Socket.io Redis adapter for multi-instance scaling
 - **Web**: React via Next.js (App Router)
