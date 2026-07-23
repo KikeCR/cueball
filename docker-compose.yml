@@ -51,7 +51,7 @@ services:
       - ./apps/server:/app/apps/server
       - ./packages/shared:/app/packages/shared
       - /app/apps/server/node_modules
-    command: npm run dev --workspace=apps/server
+    command: sh -c "npm run build --workspace=packages/shared && npm run dev --workspace=apps/server"
 
   web:
     build:
@@ -69,7 +69,7 @@ services:
       - ./apps/web:/app/apps/web
       - ./packages/shared:/app/packages/shared
       - /app/apps/web/node_modules
-    command: npm run dev --workspace=apps/web
+    command: sh -c "npm run build --workspace=packages/shared && npm run dev --workspace=apps/web"
 
 volumes:
   postgres_data:

@@ -21,6 +21,17 @@ export interface Participant {
   joinedAt: string;
 }
 
+export interface ParticipantWithPresence extends Participant {
+  connected: boolean;
+}
+
+export interface RoomPreview {
+  id: string;
+  code: string;
+  name: string | null;
+  createdAt: string;
+}
+
 export interface QueueItem {
   id: string;
   roomId: string;

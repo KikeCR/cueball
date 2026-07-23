@@ -8,6 +8,10 @@ dist/
 build/
 .next/
 out/
+*.tsbuildinfo
+
+# test coverage
+coverage/
 
 # logs
 npm-debug.log*
