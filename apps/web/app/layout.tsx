@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import "../styles/shared.css";
 
 export const metadata = {
   title: "CueBall",

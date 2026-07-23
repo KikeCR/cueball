@@ -1,4 +1,9 @@
-import type { Participant, PlaybackState, QueueItem, Room } from "./types.js";
+import type {
+  ParticipantWithPresence,
+  PlaybackState,
+  QueueItem,
+  Room,
+} from "./types.js";
 
 export const SocketEvents = {
   RoomJoin: "room:join",
@@ -20,13 +25,38 @@ export const SocketEvents = {
 
 export interface RoomJoinPayload {
   roomCode: string;
-  guestName?: string;
+  guestName: string;
 }
 
 export interface RoomStatePayload {
   room: Room;
-  participants: Participant[];
+  participants: ParticipantWithPresence[];
   queue: QueueItem[];
+}
+
+export interface RoomJoinResult {
+  room: Room;
+  participant: ParticipantWithPresence;
+  /** Persisted client-side and sent as the socket auth token on reconnect. */
+  participantToken: string;
+  participants: ParticipantWithPresence[];
+  queue: QueueItem[];
+}
+
+export interface RoomJoinError {
+  error: string;
+}
+
+export interface CreateRoomRequest {
+  hostName: string;
+  roomName?: string;
+}
+
+export interface CreateRoomResponse {
+  room: Room;
+  participant: ParticipantWithPresence;
+  /** Persisted client-side and sent as the socket auth token on reconnect. */
+  participantToken: string;
 }
 
 export interface QueueAddPayload {

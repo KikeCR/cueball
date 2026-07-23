@@ -1,0 +1,1 @@
+export { JoinRoomForm } from "./JoinRoomForm";

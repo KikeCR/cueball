@@ -1,0 +1,158 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { io, type Socket } from "socket.io-client";
+import {
+  SocketEvents,
+  type ParticipantWithPresence,
+  type QueueItem,
+  type Room,
+  type RoomJoinError,
+  type RoomJoinResult,
+  type RoomStatePayload,
+} from "@cueball/shared";
+import {
+  clearParticipantToken,
+  getStoredParticipantToken,
+  storeParticipantToken,
+} from "../utils/participantSession";
+import { decodeJwtPayload } from "../utils/jwt";
+
+const SOCKET_URL =
+  process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000";
+const RECONNECT_TIMEOUT_MS = 4000;
+
+interface RoomContextValue {
+  connected: boolean;
+  reconnecting: boolean;
+  room: Room | null;
+  participants: ParticipantWithPresence[];
+  queue: QueueItem[];
+  self: ParticipantWithPresence | null;
+  joinError: string | null;
+  joinAsGuest: (guestName: string) => Promise<void>;
+}
+
+const RoomContext = createContext<RoomContextValue | null>(null);
+
+export function RoomProvider({
+  roomCode,
+  children,
+}: {
+  roomCode: string;
+  children: ReactNode;
+}) {
+  const socketRef = useRef<Socket | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [room, setRoom] = useState<Room | null>(null);
+  const [participants, setParticipants] = useState<ParticipantWithPresence[]>(
+    [],
+  );
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [selfId, setSelfId] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = getStoredParticipantToken(roomCode);
+    let receivedState = false;
+    setReconnecting(Boolean(token));
+
+    if (token) {
+      const decoded = decodeJwtPayload<{ participantId: string }>(token);
+      if (decoded) setSelfId(decoded.participantId);
+    }
+
+    const socket = io(SOCKET_URL, { auth: token ? { token } : {} });
+    socketRef.current = socket;
+
+    socket.on("connect", () => setConnected(true));
+    socket.on("disconnect", () => setConnected(false));
+    socket.on(SocketEvents.RoomState, (state: RoomStatePayload) => {
+      receivedState = true;
+      setReconnecting(false);
+      setRoom(state.room);
+      setParticipants(state.participants);
+      setQueue(state.queue);
+    });
+
+    const staleTimer = token
+      ? window.setTimeout(() => {
+          if (!receivedState) {
+            clearParticipantToken(roomCode);
+            setSelfId(null);
+            setReconnecting(false);
+          }
+        }, RECONNECT_TIMEOUT_MS)
+      : undefined;
+
+    return () => {
+      if (staleTimer) window.clearTimeout(staleTimer);
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [roomCode]);
+
+  const joinAsGuest = useCallback(
+    (guestName: string) =>
+      new Promise<void>((resolve, reject) => {
+        const socket = socketRef.current;
+        if (!socket) {
+          reject(new Error("Not connected"));
+          return;
+        }
+        socket.emit(
+          SocketEvents.RoomJoin,
+          { roomCode, guestName },
+          (result: RoomJoinResult | RoomJoinError) => {
+            if ("error" in result) {
+              setJoinError(result.error);
+              reject(new Error(result.error));
+              return;
+            }
+            storeParticipantToken(roomCode, result.participantToken);
+            setRoom(result.room);
+            setParticipants(result.participants);
+            setQueue(result.queue);
+            setSelfId(result.participant.id);
+            setJoinError(null);
+            resolve();
+          },
+        );
+      }),
+    [roomCode],
+  );
+
+  const self = participants.find((p) => p.id === selfId) ?? null;
+
+  return (
+    <RoomContext.Provider
+      value={{
+        connected,
+        reconnecting,
+        room,
+        participants,
+        queue,
+        self,
+        joinError,
+        joinAsGuest,
+      }}
+    >
+      {children}
+    </RoomContext.Provider>
+  );
+}
+
+export function useRoom(): RoomContextValue {
+  const ctx = useContext(RoomContext);
+  if (!ctx) throw new Error("useRoom must be used within RoomProvider");
+  return ctx;
+}
