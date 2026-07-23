@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlaybackState {
+  PLAYING
+  PAUSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String?  @unique
+  passwordHash String?
+  displayName  String
+  createdAt    DateTime @default(now())
+
+  hostedRooms  Room[]        @relation("RoomHost")
+  participants Participant[]
+
+  @@map("users")
+}
+
+model Room {
+  id   String  @id @default(cuid())
+  code String  @unique
+  name String?
+
+  hostUserId String?
+  hostUser   User?   @relation("RoomHost", fields: [hostUserId], references: [id], onDelete: SetNull)
+
+  controllerId String?      @unique
+  controller   Participant? @relation("RoomController", fields: [controllerId], references: [id], onDelete: SetNull)
+
+  currentTrackId String?    @unique
+  currentTrack   QueueItem? @relation("RoomCurrentTrack", fields: [currentTrackId], references: [id], onDelete: SetNull)
+
+  playbackState    PlaybackState @default(PAUSED)
+  playbackPosition Float         @default(0)
+
+  createdAt DateTime @default(now())
+
+  participants Participant[] @relation("RoomParticipants")
+  queueItems   QueueItem[]   @relation("RoomQueueItems")
+
+  @@map("rooms")
+}
+
+model Participant {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation("RoomParticipants", fields: [roomId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  guestName String?
+  isHost    Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+
+  addedQueueItems QueueItem[] @relation("QueueItemAddedBy")
+  votes           Vote[]
+  controlledRoom  Room?       @relation("RoomController")
+
+  @@map("participants")
+}
+
+model QueueItem {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation("RoomQueueItems", fields: [roomId], references: [id], onDelete: Cascade)
+
+  youtubeVideoId String
+  title          String
+  thumbnailUrl   String?
+
+  addedByParticipantId String?
+  addedBy              Participant? @relation("QueueItemAddedBy", fields: [addedByParticipantId], references: [id], onDelete: SetNull)
+
+  score     Int       @default(0)
+  playedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  votes         Vote[]
+  currentInRoom Room?  @relation("RoomCurrentTrack")
+
+  @@index([roomId])
+  @@map("queue_items")
+}
+
+model Vote {
+  id String @id @default(cuid())
+
+  queueItemId String
+  queueItem   QueueItem @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  value     Int
+  createdAt DateTime @default(now())
+
+  @@unique([queueItemId, participantId])
+  @@map("votes")
+}

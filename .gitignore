@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+
+# build output
+dist/
+build/
+.next/
+out/
+
+# logs
+npm-debug.log*
+*.log
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# docker
+docker-compose.override.yml
