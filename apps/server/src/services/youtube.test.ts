@@ -7,8 +7,17 @@ describe("parseYoutubeVideoId", () => {
     ["https://youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     ["https://m.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     ["https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s", "dQw4w9WgXcQ"],
+    // Auto-playing "up next" radio/mix params must not leak into the id.
+    [
+      "https://www.youtube.com/watch?v=MVh6XTwWhMY&list=RDMVh6XTwWhMY&start_radio=1",
+      "MVh6XTwWhMY",
+    ],
     ["https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     ["https://youtu.be/dQw4w9WgXcQ?t=30", "dQw4w9WgXcQ"],
+    [
+      "https://youtu.be/dQw4w9WgXcQ?list=RDdQw4w9WgXcQ&start_radio=1",
+      "dQw4w9WgXcQ",
+    ],
     ["https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
     ["https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
   ])("extracts the video id from %s", (url, expected) => {

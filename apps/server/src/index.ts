@@ -14,13 +14,16 @@ import { youtubeRouter } from "./routes/youtube.js"
 import { registerRoomHandlers } from "./sockets/room.js"
 import { registerQueueHandlers } from "./sockets/queue.js"
 import { setIo } from "./realtime.js"
+import { sweepExpiredRooms } from "./services/roomService.js"
 
 const PORT = Number(process.env.PORT ?? 4000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000"
+const ROOM_SWEEP_INTERVAL_MS =
+  Number(process.env.ROOM_SWEEP_INTERVAL_MINUTES ?? 30) * 60 * 1000
 
 // Socket handlers run as fire-and-forget async IIFEs (`void (async () => {...})()`)
 // so a socket event's ack/broadcast isn't blocked on the caller. That means an
-// unexpected error inside one has nowhere to be caught by the caller — left
+// unexpected error inside one has nowhere to be caught by the caller. Left
 // alone, Node terminates the whole process on any unhandled rejection, taking
 // down every other room's connections over a single bad event. Log instead.
 process.on("unhandledRejection", (reason) => {
@@ -55,6 +58,19 @@ io.adapter(createAdapter(pubClient, subClient))
 
 registerRoomHandlers(io)
 registerQueueHandlers(io)
+
+function runRoomSweep(): void {
+  sweepExpiredRooms()
+    .then((count) => {
+      if (count > 0) console.log(`Room sweep: deleted ${count} expired room(s)`)
+    })
+    .catch((err: unknown) => {
+      console.error("Room sweep failed:", err)
+    })
+}
+
+runRoomSweep()
+setInterval(runRoomSweep, ROOM_SWEEP_INTERVAL_MS)
 
 httpServer.listen(PORT, () => {
   console.log(`server listening on :${PORT}`)

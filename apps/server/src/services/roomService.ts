@@ -74,14 +74,49 @@ export async function addParticipant(params: {
     const room = await tx.room.findUniqueOrThrow({
       where: { id: params.roomId },
     })
-    if (!room.controllerId) {
-      await tx.room.update({
-        where: { id: params.roomId },
-        data: { controllerId: participant.id },
-      })
-    }
+    await tx.room.update({
+      where: { id: params.roomId },
+      data: {
+        lastActiveAt: new Date(),
+        ...(room.controllerId ? {} : { controllerId: participant.id }),
+      },
+    })
     return participant
   })
+}
+
+/** Marks a room as recently used, so the expiry sweep leaves it alone. */
+export async function touchRoomActivity(roomId: string): Promise<void> {
+  await prisma.room.update({
+    where: { id: roomId },
+    data: { lastActiveAt: new Date() },
+  })
+}
+
+const DEFAULT_ROOM_EXPIRY_HOURS = Number(process.env.ROOM_EXPIRY_HOURS ?? 24)
+
+/**
+ * Deletes rooms that have had no activity for `expiryHours` and currently
+ * have zero connected participants (checked at delete time, not just from
+ * the stale `lastActiveAt` column, so a quiet-but-still-open room survives).
+ */
+export async function sweepExpiredRooms(
+  expiryHours: number = DEFAULT_ROOM_EXPIRY_HOURS,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - expiryHours * 60 * 60 * 1000)
+  const candidates = await prisma.room.findMany({
+    where: { lastActiveAt: { lt: cutoff } },
+    select: { id: true },
+  })
+
+  let deletedCount = 0
+  for (const candidate of candidates) {
+    const connected = await getConnectedParticipantIds(candidate.id)
+    if (connected.size > 0) continue
+    await prisma.room.delete({ where: { id: candidate.id } })
+    deletedCount++
+  }
+  return deletedCount
 }
 
 export async function getRoomState(roomId: string) {

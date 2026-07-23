@@ -23,11 +23,23 @@ vi.mock("./prisma.js", () => {
   return { prisma }
 })
 
+// Mocked directly (rather than letting queueService pull in the real
+// roomService.ts) so this test doesn't transitively import the real Redis
+// client that roomService.ts depends on.
+vi.mock("./roomService.js", () => ({
+  touchRoomActivity: vi.fn(),
+}))
+
 import { prisma } from "./prisma.js"
+import { touchRoomActivity } from "./roomService.js"
 import { addQueueItem, castVote, removeQueueItem } from "./queueService.js"
 
 describe("addQueueItem", () => {
-  it("creates a queue item with the given fields", async () => {
+  beforeEach(() => {
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("creates a queue item with the given fields and marks the room active", async () => {
     vi.mocked(prisma.queueItem.create).mockResolvedValue({
       id: "item-1",
       votes: [],
@@ -51,6 +63,7 @@ describe("addQueueItem", () => {
       },
       include: { votes: true },
     })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 })
 
@@ -147,6 +160,7 @@ describe("removeQueueItem", () => {
   beforeEach(() => {
     vi.mocked(prisma.queueItem.findFirst).mockReset()
     vi.mocked(prisma.queueItem.delete).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
   })
 
   it("returns an error when the item isn't in this room's queue", async () => {
@@ -180,6 +194,7 @@ describe("removeQueueItem", () => {
     expect(prisma.queueItem.delete).toHaveBeenCalledWith({
       where: { id: "item-1" },
     })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 
   it("lets the host remove a video someone else added", async () => {
@@ -216,5 +231,6 @@ describe("removeQueueItem", () => {
       error: "Only the person who added this, or the host, can remove it",
     })
     expect(prisma.queueItem.delete).not.toHaveBeenCalled()
+    expect(touchRoomActivity).not.toHaveBeenCalled()
   })
 })

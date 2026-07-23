@@ -3,6 +3,7 @@ import type {
   Vote as PrismaVote,
 } from "@prisma/client"
 import { prisma } from "./prisma.js"
+import { touchRoomActivity } from "./roomService.js"
 
 export type QueueItemWithVotes = PrismaQueueItem & { votes: PrismaVote[] }
 
@@ -13,7 +14,7 @@ export async function addQueueItem(params: {
   title: string
   thumbnailUrl: string | null
 }): Promise<QueueItemWithVotes> {
-  return prisma.queueItem.create({
+  const item = await prisma.queueItem.create({
     data: {
       roomId: params.roomId,
       youtubeVideoId: params.youtubeVideoId,
@@ -23,6 +24,8 @@ export async function addQueueItem(params: {
     },
     include: { votes: true },
   })
+  await touchRoomActivity(params.roomId)
+  return item
 }
 
 /** Casting the same vote twice removes it; casting the opposite vote flips it. */
@@ -31,44 +34,49 @@ export async function castVote(params: {
   participantId: string
   value: 1 | -1
 }): Promise<QueueItemWithVotes> {
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.vote.findUnique({
-      where: {
-        queueItemId_participantId: {
-          queueItemId: params.queueItemId,
-          participantId: params.participantId,
-        },
-      },
-    })
-
-    if (!existing) {
-      await tx.vote.create({
-        data: {
-          queueItemId: params.queueItemId,
-          participantId: params.participantId,
-          value: params.value,
+  return prisma
+    .$transaction(async (tx) => {
+      const existing = await tx.vote.findUnique({
+        where: {
+          queueItemId_participantId: {
+            queueItemId: params.queueItemId,
+            participantId: params.participantId,
+          },
         },
       })
-    } else if (existing.value === params.value) {
-      await tx.vote.delete({ where: { id: existing.id } })
-    } else {
-      await tx.vote.update({
-        where: { id: existing.id },
-        data: { value: params.value },
+
+      if (!existing) {
+        await tx.vote.create({
+          data: {
+            queueItemId: params.queueItemId,
+            participantId: params.participantId,
+            value: params.value,
+          },
+        })
+      } else if (existing.value === params.value) {
+        await tx.vote.delete({ where: { id: existing.id } })
+      } else {
+        await tx.vote.update({
+          where: { id: existing.id },
+          data: { value: params.value },
+        })
+      }
+
+      const votes = await tx.vote.findMany({
+        where: { queueItemId: params.queueItemId },
       })
-    }
+      const score = votes.reduce((sum, vote) => sum + vote.value, 0)
 
-    const votes = await tx.vote.findMany({
-      where: { queueItemId: params.queueItemId },
+      return tx.queueItem.update({
+        where: { id: params.queueItemId },
+        data: { score },
+        include: { votes: true },
+      })
     })
-    const score = votes.reduce((sum, vote) => sum + vote.value, 0)
-
-    return tx.queueItem.update({
-      where: { id: params.queueItemId },
-      data: { score },
-      include: { votes: true },
+    .then(async (item) => {
+      await touchRoomActivity(item.roomId)
+      return item
     })
-  })
 }
 
 export type RemoveQueueItemResult =
@@ -95,5 +103,6 @@ export async function removeQueueItem(params: {
   }
 
   await prisma.queueItem.delete({ where: { id: item.id } })
+  await touchRoomActivity(params.roomId)
   return { removed: item }
 }
