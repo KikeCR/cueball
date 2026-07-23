@@ -42,6 +42,11 @@ model Room {
   playbackState    PlaybackState @default(PAUSED)
   playbackPosition Float         @default(0)
 
+  youtubeAccessToken    String?
+  youtubeRefreshToken   String?
+  youtubeTokenExpiresAt DateTime?
+  youtubePlaylistId     String?
+
   createdAt DateTime @default(now())
 
   participants Participant[] @relation("RoomParticipants")
@@ -74,9 +79,10 @@ model QueueItem {
   roomId String
   room   Room   @relation("RoomQueueItems", fields: [roomId], references: [id], onDelete: Cascade)
 
-  youtubeVideoId String
-  title          String
-  thumbnailUrl   String?
+  youtubeVideoId        String
+  title                 String
+  thumbnailUrl          String?
+  youtubePlaylistItemId String?
 
   addedByParticipantId String?
   addedBy              Participant? @relation("QueueItemAddedBy", fields: [addedByParticipantId], references: [id], onDelete: SetNull)

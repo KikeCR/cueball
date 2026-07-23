@@ -15,6 +15,8 @@ export function serializeRoom(room: PrismaRoom): Room {
     currentTrackId: room.currentTrackId,
     playbackState: room.playbackState,
     playbackPosition: room.playbackPosition,
+    // Never serialize the access/refresh tokens — only the client-safe playlist id.
+    youtubePlaylistId: room.youtubePlaylistId,
     createdAt: room.createdAt.toISOString(),
   }
 }

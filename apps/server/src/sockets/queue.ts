@@ -8,7 +8,10 @@ import {
 } from "@cueball/shared"
 import { addQueueItem, castVote } from "../services/queueService.js"
 import { fetchVideoMetadata, parseYoutubeVideoId } from "../services/youtube.js"
+import { prisma } from "../services/prisma.js"
+import { addVideoToPlaylist } from "../services/youtubePlaylist.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { schedulePlaylistSync } from "./playlistSync.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
@@ -20,6 +23,17 @@ export function registerQueueHandlers(io: Server): void {
         const { participantId, roomId } = socket.data
         if (!participantId || !roomId) {
           ack?.({ error: "Join a room before adding videos" })
+          return
+        }
+
+        // The queue only exists to feed the real playlist, so require that
+        // connection before accepting adds rather than silently queuing
+        // videos in-app that never make it to the TV.
+        const room = await prisma.room.findUnique({ where: { id: roomId } })
+        if (!room?.youtubePlaylistId) {
+          ack?.({
+            error: "Ask the host to connect YouTube before adding videos",
+          })
           return
         }
 
@@ -35,7 +49,7 @@ export function registerQueueHandlers(io: Server): void {
           return
         }
 
-        await addQueueItem({
+        const queueItem = await addQueueItem({
           roomId,
           addedByParticipantId: participantId,
           youtubeVideoId: videoId,
@@ -45,6 +59,19 @@ export function registerQueueHandlers(io: Server): void {
 
         ack?.({ ok: true })
         await broadcastRoomState(io, roomId)
+
+        // Sync to the real playlist after the in-app queue already reflects
+        // the add, so this network round-trip to Google doesn't delay the
+        // instant in-room feedback.
+        try {
+          await addVideoToPlaylist(room, queueItem)
+          await broadcastRoomState(io, roomId)
+        } catch (err) {
+          console.error(
+            `Failed to sync new queue item to YouTube playlist for room ${roomId}`,
+            err,
+          )
+        }
       })()
     })
 
@@ -71,6 +98,7 @@ export function registerQueueHandlers(io: Server): void {
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
+          schedulePlaylistSync(roomId)
         })()
       },
     )

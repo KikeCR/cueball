@@ -10,8 +10,10 @@ import { Server } from "socket.io"
 import { createAdapter } from "@socket.io/redis-adapter"
 import { redis } from "./redis/client.js"
 import { roomsRouter } from "./routes/rooms.js"
+import { youtubeRouter } from "./routes/youtube.js"
 import { registerRoomHandlers } from "./sockets/room.js"
 import { registerQueueHandlers } from "./sockets/queue.js"
+import { setIo } from "./realtime.js"
 
 const PORT = Number(process.env.PORT ?? 4000)
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000"
@@ -25,6 +27,7 @@ app.get("/health", (_req, res) => {
 })
 
 app.use("/api/rooms", roomsRouter)
+app.use("/api", youtubeRouter)
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err)
@@ -35,6 +38,7 @@ const httpServer = createServer(app)
 const io = new Server(httpServer, {
   cors: { origin: CLIENT_ORIGIN },
 })
+setIo(io)
 
 const pubClient = redis.duplicate()
 const subClient = redis.duplicate()
