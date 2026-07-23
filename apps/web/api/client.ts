@@ -1,7 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
 
 interface RequestOptions extends RequestInit {
-  headers?: Record<string, string>;
+  headers?: Record<string, string>
 }
 
 async function request<T>(
@@ -14,19 +14,19 @@ async function request<T>(
       "Content-Type": "application/json",
       ...options.headers,
     },
-  });
+  })
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
+    const body = await res.json().catch(() => null)
     const message =
       body && typeof body.error === "string"
         ? body.error
-        : `Request failed (${res.status})`;
-    throw new Error(message);
+        : `Request failed (${res.status})`
+    throw new Error(message)
   }
 
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  if (res.status === 204) return undefined as T
+  return res.json() as Promise<T>
 }
 
 export const api = {
@@ -36,4 +36,4 @@ export const api = {
       method: "POST",
       body: body !== undefined ? JSON.stringify(body) : undefined,
     }),
-};
+}

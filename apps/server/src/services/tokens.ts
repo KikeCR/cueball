@@ -1,11 +1,11 @@
-import jwt from "jsonwebtoken";
+import jwt from "jsonwebtoken"
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
+const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me"
 
 interface ParticipantTokenPayload {
-  type: "participant";
-  participantId: string;
-  roomId: string;
+  type: "participant"
+  participantId: string
+  roomId: string
 }
 
 export function signParticipantToken(
@@ -16,18 +16,18 @@ export function signParticipantToken(
     type: "participant",
     participantId,
     roomId,
-  };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" });
+  }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "7d" })
 }
 
 export function verifyParticipantToken(
   token: string,
 ): { participantId: string; roomId: string } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as ParticipantTokenPayload;
-    if (decoded.type !== "participant") return null;
-    return { participantId: decoded.participantId, roomId: decoded.roomId };
+    const decoded = jwt.verify(token, JWT_SECRET) as ParticipantTokenPayload
+    if (decoded.type !== "participant") return null
+    return { participantId: decoded.participantId, roomId: decoded.roomId }
   } catch {
-    return null;
+    return null
   }
 }

@@ -1,1 +1,1 @@
-export { JoinRoomForm } from "./JoinRoomForm";
+export { JoinRoomForm } from "./JoinRoomForm"

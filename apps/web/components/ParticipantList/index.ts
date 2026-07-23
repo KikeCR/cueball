@@ -1,1 +1,1 @@
-export { ParticipantList } from "./ParticipantList";
+export { ParticipantList } from "./ParticipantList"
