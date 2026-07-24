@@ -16,6 +16,7 @@ import {
   type ActionOk,
   type ParticipantRemovedPayload,
   type ParticipantWithPresence,
+  type PlaylistSyncFailedPayload,
   type QueueItem,
   type Room,
   type RoomJoinResult,
@@ -62,6 +63,8 @@ interface RoomContextValue {
   joinError: string | null
   /** Set when the host removes this participant; cleared on the next successful join. */
   removedReason: string | null
+  /** A fresh object each time a YouTube playlist sync fails, so repeated identical failures still notify. */
+  playlistSyncError: { message: string; id: number } | null
   joinAsGuest: (guestName: string) => Promise<void>
   addToQueue: (youtubeUrl: string) => Promise<void>
   voteOnQueueItem: (queueItemId: string, value: 1 | -1) => Promise<void>
@@ -92,6 +95,10 @@ export function RoomProvider({
   const [selfId, setSelfId] = useState<string | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
   const [removedReason, setRemovedReason] = useState<string | null>(null)
+  const [playlistSyncError, setPlaylistSyncError] = useState<{
+    message: string
+    id: number
+  } | null>(null)
 
   useEffect(() => {
     const token = getStoredParticipantToken(roomCode)
@@ -124,6 +131,12 @@ export function RoomProvider({
         clearParticipantToken(roomCode)
         setSelfId(null)
         setRemovedReason(payload.reason)
+      },
+    )
+    socket.on(
+      SocketEvents.PlaylistSyncFailed,
+      (payload: PlaylistSyncFailedPayload) => {
+        setPlaylistSyncError({ message: payload.reason, id: Date.now() })
       },
     )
 
@@ -240,6 +253,7 @@ export function RoomProvider({
         self,
         joinError,
         removedReason,
+        playlistSyncError,
         joinAsGuest,
         addToQueue,
         voteOnQueueItem,

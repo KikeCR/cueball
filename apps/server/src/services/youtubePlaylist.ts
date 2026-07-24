@@ -3,6 +3,24 @@ import { prisma } from "./prisma.js"
 import { sortQueueItems } from "./roomService.js"
 import { getAuthorizedYoutubeClient } from "./youtubeAuth.js"
 
+/**
+ * Picks a user-facing reason for a failed YouTube playlist API call. The
+ * default "check the connection" framing is actively misleading for quota
+ * errors (a very common failure mode under any real testing/usage volume) —
+ * those have nothing to do with the OAuth connection and self-resolve on
+ * Google's own daily reset, so callers shouldn't be sent off to reconnect
+ * YouTube for no reason.
+ */
+export function describeYoutubePlaylistError(err: unknown): string {
+  const reason = (
+    err as { errors?: Array<{ reason?: string }> } | undefined
+  )?.errors?.[0]?.reason
+  if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
+    return "YouTube's daily API limit has been reached. This resets automatically — try again later."
+  }
+  return "Ask the host to check their YouTube connection."
+}
+
 export async function createPlaylistForRoom(room: Room): Promise<string> {
   const youtube = getAuthorizedYoutubeClient(room)
   const res = await youtube.playlists.insert({
@@ -62,15 +80,23 @@ export async function removeVideoFromPlaylist(
   await youtube.playlistItems.delete({ id: playlistItemId })
 }
 
-/** Naive full resync: fine for a demo-sized queue, would want move-diffing to stay under quota at scale. */
-export async function syncPlaylistOrder(roomId: string): Promise<void> {
-  const room = await prisma.room.findUnique({ where: { id: roomId } })
-  if (!room?.youtubePlaylistId) return
+/**
+ * Naive full resync: fine for a demo-sized queue, would want move-diffing to
+ * stay under quota at scale. Takes the order explicitly rather than reading
+ * it from the DB, so a caller can confirm the real playlist accepts a
+ * reorder *before* committing it in-app (see queueService's prepare/commit
+ * split for reorder and remove).
+ */
+export async function syncPlaylistOrderForItems(
+  room: Room,
+  orderedItems: Array<
+    Pick<QueueItem, "id" | "youtubeVideoId" | "youtubePlaylistItemId">
+  >,
+): Promise<void> {
+  if (!room.youtubePlaylistId) return
   const playlistId = room.youtubePlaylistId
 
-  const allItems = await prisma.queueItem.findMany({ where: { roomId } })
-  const sortedItems = sortQueueItems(allItems, room.manualQueueOrder)
-  const syncedItems = sortedItems.filter(
+  const syncedItems = orderedItems.filter(
     (item): item is typeof item & { youtubePlaylistItemId: string } =>
       item.youtubePlaylistItemId !== null,
   )
@@ -92,4 +118,14 @@ export async function syncPlaylistOrder(roomId: string): Promise<void> {
       }),
     ),
   )
+}
+
+/** Resyncs the real playlist order from the DB's current score/position state (used by the debounced vote-driven sync). */
+export async function syncPlaylistOrder(roomId: string): Promise<void> {
+  const room = await prisma.room.findUnique({ where: { id: roomId } })
+  if (!room?.youtubePlaylistId) return
+
+  const allItems = await prisma.queueItem.findMany({ where: { roomId } })
+  const sortedItems = sortQueueItems(allItems, room.manualQueueOrder)
+  await syncPlaylistOrderForItems(room, sortedItems)
 }

@@ -23,4 +23,10 @@ describe("Footer", () => {
       expect(link).toHaveAttribute("rel", "noopener noreferrer")
     }
   })
+
+  it("links to the privacy policy and terms of service pages", () => {
+    const footer = new FooterPageObject()
+    expect(footer.privacyLink).toHaveAttribute("href", "/privacy")
+    expect(footer.termsLink).toHaveAttribute("href", "/terms")
+  })
 })

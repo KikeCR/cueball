@@ -20,6 +20,8 @@ export const SocketEvents = {
   QueueRemove: "queue:remove",
   QueueReorder: "queue:reorder",
   QueueSetPlayed: "queue:set-played",
+
+  PlaylistSyncFailed: "playlist:sync-failed",
 } as const
 
 export interface RoomJoinPayload {
@@ -95,6 +97,10 @@ export interface QueueReorderPayload {
 export interface QueueSetPlayedPayload {
   queueItemId: string
   played: boolean
+}
+
+export interface PlaylistSyncFailedPayload {
+  reason: string
 }
 
 export interface RegisterRequest {

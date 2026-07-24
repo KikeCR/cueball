@@ -17,4 +17,12 @@ export class FooterPageObject {
   get linkedInLink() {
     return screen.getByRole("link", { name: "LinkedIn" }) as HTMLAnchorElement
   }
+
+  get privacyLink() {
+    return screen.getByRole("link", { name: "Privacy" }) as HTMLAnchorElement
+  }
+
+  get termsLink() {
+    return screen.getByRole("link", { name: "Terms" }) as HTMLAnchorElement
+  }
 }

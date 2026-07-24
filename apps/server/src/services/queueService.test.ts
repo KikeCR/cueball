@@ -47,10 +47,13 @@ import { touchRoomActivity } from "./roomService.js"
 import {
   addQueueItem,
   castVote,
+  commitQueueItemPlayed,
+  commitQueueItemRemoval,
+  commitQueueReorder,
+  findQueueItemForPlayedToggle,
+  findRemovableQueueItem,
   isVideoAlreadyQueued,
-  removeQueueItem,
-  reorderQueue,
-  setQueueItemPlayed,
+  prepareQueueReorder,
 } from "./queueService.js"
 
 describe("isVideoAlreadyQueued", () => {
@@ -147,16 +150,13 @@ describe("addQueueItem", () => {
   })
 })
 
-describe("reorderQueue", () => {
+describe("prepareQueueReorder", () => {
   beforeEach(() => {
     vi.mocked(prisma.queueItem.findMany).mockReset()
-    vi.mocked(prisma.queueItem.update).mockReset()
-    vi.mocked(prisma.room.update).mockReset()
-    vi.mocked(touchRoomActivity).mockReset()
   })
 
   it("rejects a non-host requester", async () => {
-    const result = await reorderQueue({
+    const result = await prepareQueueReorder({
       roomId: "room-1",
       isHost: false,
       orderedQueueItemIds: ["a", "b"],
@@ -166,39 +166,84 @@ describe("reorderQueue", () => {
     expect(prisma.queueItem.findMany).not.toHaveBeenCalled()
   })
 
-  it("rejects an order that doesn't match the room's current items", async () => {
+  it("rejects an order that doesn't match the room's current unplayed items", async () => {
     vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
       { id: "a" },
       { id: "b" },
       { id: "c" },
     ] as never)
 
-    const result = await reorderQueue({
+    const result = await prepareQueueReorder({
       roomId: "room-1",
       isHost: true,
       orderedQueueItemIds: ["a", "b"], // missing "c"
     })
 
     expect(result).toEqual({ error: "Queue changed, please try again" })
-    expect(prisma.queueItem.update).not.toHaveBeenCalled()
   })
 
-  it("writes position = index for each item in the new order, and switches the room into manual order", async () => {
+  it("only compares against unplayed items, so a played video in the room doesn't block reordering", async () => {
+    // Regression test: findMany used to fetch every queue item regardless of
+    // playedAt, so any room with at least one played video would always
+    // look "changed" (the played item never appears in the dragged order,
+    // which only ever contains unplayed items) and reject every reorder.
     vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
       { id: "a" },
       { id: "b" },
-      { id: "c" },
     ] as never)
-    vi.mocked(prisma.queueItem.update).mockResolvedValue({} as never)
-    vi.mocked(prisma.room.update).mockResolvedValue({} as never)
 
-    const result = await reorderQueue({
+    const result = await prepareQueueReorder({
+      roomId: "room-1",
+      isHost: true,
+      orderedQueueItemIds: ["b", "a"], // no "c" (played), matches the UI's behavior
+    })
+
+    expect(prisma.queueItem.findMany).toHaveBeenCalledWith({
+      where: { roomId: "room-1", playedAt: null },
+      include: { votes: true },
+    })
+    expect("items" in result).toBe(true)
+  })
+
+  it("returns the full item rows in the requested order, without writing anything", async () => {
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
+      { id: "a", title: "A" },
+      { id: "b", title: "B" },
+      { id: "c", title: "C" },
+    ] as never)
+
+    const result = await prepareQueueReorder({
       roomId: "room-1",
       isHost: true,
       orderedQueueItemIds: ["c", "a", "b"],
     })
 
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({
+      items: [
+        { id: "c", title: "C" },
+        { id: "a", title: "A" },
+        { id: "b", title: "B" },
+      ],
+    })
+  })
+})
+
+describe("commitQueueReorder", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.update).mockReset()
+    vi.mocked(prisma.room.update).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("writes position = index for each item in the new order, and switches the room into manual order", async () => {
+    vi.mocked(prisma.queueItem.update).mockResolvedValue({} as never)
+    vi.mocked(prisma.room.update).mockResolvedValue({} as never)
+
+    await commitQueueReorder({
+      roomId: "room-1",
+      orderedQueueItemIds: ["c", "a", "b"],
+    })
+
     expect(prisma.queueItem.update).toHaveBeenCalledWith({
       where: { id: "c" },
       data: { position: 0 },
@@ -374,17 +419,15 @@ describe("castVote", () => {
   })
 })
 
-describe("removeQueueItem", () => {
+describe("findRemovableQueueItem", () => {
   beforeEach(() => {
     vi.mocked(prisma.queueItem.findFirst).mockReset()
-    vi.mocked(prisma.queueItem.delete).mockReset()
-    vi.mocked(touchRoomActivity).mockReset()
   })
 
   it("returns an error when the item isn't in this room's queue", async () => {
     vi.mocked(prisma.queueItem.findFirst).mockResolvedValue(null)
 
-    const result = await removeQueueItem({
+    const result = await findRemovableQueueItem({
       queueItemId: "missing",
       roomId: "room-1",
       participantId: "participant-1",
@@ -392,44 +435,38 @@ describe("removeQueueItem", () => {
     })
 
     expect(result).toEqual({ error: "Video not found in this room's queue" })
-    expect(prisma.queueItem.delete).not.toHaveBeenCalled()
   })
 
-  it("lets the participant who added the video remove it", async () => {
+  it("lets the participant who added the video find it for removal", async () => {
     vi.mocked(prisma.queueItem.findFirst).mockResolvedValue({
       id: "item-1",
       addedByParticipantId: "participant-1",
     } as never)
 
-    const result = await removeQueueItem({
+    const result = await findRemovableQueueItem({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "participant-1",
       isHost: false,
     })
 
-    expect("removed" in result).toBe(true)
-    expect(prisma.queueItem.delete).toHaveBeenCalledWith({
-      where: { id: "item-1" },
-    })
-    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+    expect("item" in result).toBe(true)
   })
 
-  it("lets the host remove a video someone else added", async () => {
+  it("lets the host find a video someone else added", async () => {
     vi.mocked(prisma.queueItem.findFirst).mockResolvedValue({
       id: "item-1",
       addedByParticipantId: "someone-else",
     } as never)
 
-    const result = await removeQueueItem({
+    const result = await findRemovableQueueItem({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "host-participant",
       isHost: true,
     })
 
-    expect("removed" in result).toBe(true)
-    expect(prisma.queueItem.delete).toHaveBeenCalled()
+    expect("item" in result).toBe(true)
   })
 
   it("blocks a non-host, non-adder from removing someone else's video", async () => {
@@ -438,7 +475,7 @@ describe("removeQueueItem", () => {
       addedByParticipantId: "someone-else",
     } as never)
 
-    const result = await removeQueueItem({
+    const result = await findRemovableQueueItem({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "bystander",
@@ -448,22 +485,36 @@ describe("removeQueueItem", () => {
     expect(result).toEqual({
       error: "Only the person who added this, or the host, can remove it",
     })
-    expect(prisma.queueItem.delete).not.toHaveBeenCalled()
-    expect(touchRoomActivity).not.toHaveBeenCalled()
   })
 })
 
-describe("setQueueItemPlayed", () => {
+describe("commitQueueItemRemoval", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.delete).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("deletes the item and marks the room active", async () => {
+    vi.mocked(prisma.queueItem.delete).mockResolvedValue({} as never)
+
+    await commitQueueItemRemoval({ queueItemId: "item-1", roomId: "room-1" })
+
+    expect(prisma.queueItem.delete).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+    })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+  })
+})
+
+describe("findQueueItemForPlayedToggle", () => {
   beforeEach(() => {
     vi.mocked(prisma.queueItem.findFirst).mockReset()
-    vi.mocked(prisma.queueItem.update).mockReset()
-    vi.mocked(touchRoomActivity).mockReset()
   })
 
   it("returns an error when the item isn't in this room's queue", async () => {
     vi.mocked(prisma.queueItem.findFirst).mockResolvedValue(null)
 
-    const result = await setQueueItemPlayed({
+    const result = await findQueueItemForPlayedToggle({
       queueItemId: "missing",
       roomId: "room-1",
       participantId: "participant-1",
@@ -472,7 +523,6 @@ describe("setQueueItemPlayed", () => {
     })
 
     expect(result).toEqual({ error: "Video not found in this room's queue" })
-    expect(prisma.queueItem.update).not.toHaveBeenCalled()
   })
 
   it("blocks a non-host, non-adder from marking someone else's video played", async () => {
@@ -481,7 +531,7 @@ describe("setQueueItemPlayed", () => {
       addedByParticipantId: "someone-else",
     } as never)
 
-    const result = await setQueueItemPlayed({
+    const result = await findQueueItemForPlayedToggle({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "bystander",
@@ -492,7 +542,6 @@ describe("setQueueItemPlayed", () => {
     expect(result).toEqual({
       error: "Only the person who added this, or the host, can mark it played",
     })
-    expect(prisma.queueItem.update).not.toHaveBeenCalled()
   })
 
   it("lets the participant who added the video mark it played", async () => {
@@ -500,12 +549,8 @@ describe("setQueueItemPlayed", () => {
       id: "item-1",
       addedByParticipantId: "participant-1",
     } as never)
-    vi.mocked(prisma.queueItem.update).mockResolvedValue({
-      id: "item-1",
-      playedAt: new Date("2026-07-24"),
-    } as never)
 
-    const result = await setQueueItemPlayed({
+    const result = await findQueueItemForPlayedToggle({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "participant-1",
@@ -513,16 +558,10 @@ describe("setQueueItemPlayed", () => {
       played: true,
     })
 
-    expect(prisma.queueItem.update).toHaveBeenCalledWith({
-      where: { id: "item-1" },
-      data: { playedAt: expect.any(Date) },
-      include: { votes: true },
-    })
-    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
     expect("item" in result).toBe(true)
   })
 
-  it("lets the host mark someone else's video unplayed when it's not duplicated elsewhere", async () => {
+  it("lets the host find someone else's video to mark unplayed when it's not duplicated elsewhere", async () => {
     vi.mocked(prisma.queueItem.findFirst)
       .mockResolvedValueOnce({
         id: "item-1",
@@ -531,12 +570,8 @@ describe("setQueueItemPlayed", () => {
       } as never)
       // The internal isVideoAlreadyQueued lookup: no unplayed duplicate.
       .mockResolvedValueOnce(null)
-    vi.mocked(prisma.queueItem.update).mockResolvedValue({
-      id: "item-1",
-      playedAt: null,
-    } as never)
 
-    const result = await setQueueItemPlayed({
+    const result = await findQueueItemForPlayedToggle({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "host-participant",
@@ -544,11 +579,6 @@ describe("setQueueItemPlayed", () => {
       played: false,
     })
 
-    expect(prisma.queueItem.update).toHaveBeenCalledWith({
-      where: { id: "item-1" },
-      data: { playedAt: null },
-      include: { votes: true },
-    })
     expect("item" in result).toBe(true)
   })
 
@@ -562,7 +592,7 @@ describe("setQueueItemPlayed", () => {
       // The internal isVideoAlreadyQueued lookup: an unplayed duplicate exists.
       .mockResolvedValueOnce({ id: "item-2" } as never)
 
-    const result = await setQueueItemPlayed({
+    const result = await findQueueItemForPlayedToggle({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "host-participant",
@@ -571,7 +601,6 @@ describe("setQueueItemPlayed", () => {
     })
 
     expect(result).toEqual({ error: "That video is already in the queue" })
-    expect(prisma.queueItem.update).not.toHaveBeenCalled()
   })
 
   it("doesn't run the duplicate check when marking played (only relevant for un-marking)", async () => {
@@ -580,12 +609,8 @@ describe("setQueueItemPlayed", () => {
       addedByParticipantId: "participant-1",
       youtubeVideoId: "abc123",
     } as never)
-    vi.mocked(prisma.queueItem.update).mockResolvedValue({
-      id: "item-1",
-      playedAt: new Date(),
-    } as never)
 
-    await setQueueItemPlayed({
+    await findQueueItemForPlayedToggle({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "participant-1",
@@ -595,5 +620,51 @@ describe("setQueueItemPlayed", () => {
 
     // Only the item lookup itself, no second findFirst for a duplicate check.
     expect(prisma.queueItem.findFirst).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("commitQueueItemPlayed", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.update).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("sets playedAt when marking played, and marks the room active", async () => {
+    vi.mocked(prisma.queueItem.update).mockResolvedValue({
+      id: "item-1",
+      playedAt: new Date("2026-07-24"),
+    } as never)
+
+    await commitQueueItemPlayed({
+      queueItemId: "item-1",
+      roomId: "room-1",
+      played: true,
+    })
+
+    expect(prisma.queueItem.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: { playedAt: expect.any(Date) },
+      include: { votes: true },
+    })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+  })
+
+  it("clears playedAt when un-marking", async () => {
+    vi.mocked(prisma.queueItem.update).mockResolvedValue({
+      id: "item-1",
+      playedAt: null,
+    } as never)
+
+    await commitQueueItemPlayed({
+      queueItemId: "item-1",
+      roomId: "room-1",
+      played: false,
+    })
+
+    expect(prisma.queueItem.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: { playedAt: null },
+      include: { votes: true },
+    })
   })
 })

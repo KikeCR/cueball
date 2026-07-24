@@ -13,10 +13,13 @@ import {
 import {
   addQueueItem,
   castVote,
+  commitQueueItemPlayed,
+  commitQueueItemRemoval,
+  commitQueueReorder,
+  findQueueItemForPlayedToggle,
+  findRemovableQueueItem,
   isVideoAlreadyQueued,
-  removeQueueItem,
-  reorderQueue,
-  setQueueItemPlayed,
+  prepareQueueReorder,
 } from "../services/queueService.js"
 import {
   fetchVideoDurationSeconds,
@@ -27,9 +30,12 @@ import {
 import { prisma } from "../services/prisma.js"
 import {
   addVideoToPlaylist,
+  describeYoutubePlaylistError,
   removeVideoFromPlaylist,
+  syncPlaylistOrderForItems,
 } from "../services/youtubePlaylist.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
 import type { RoomSocket } from "./types.js"
 
@@ -97,7 +103,9 @@ export function registerQueueHandlers(io: Server): void {
 
         // Sync to the real playlist after the in-app queue already reflects
         // the add, so this network round-trip to Google doesn't delay the
-        // instant in-room feedback.
+        // instant in-room feedback. Adding is high-frequency enough (and
+        // low-stakes enough if it briefly lags) that it stays best-effort,
+        // unlike reorder/remove/mark-played below.
         try {
           await addVideoToPlaylist(room, queueItem)
           await broadcastRoomState(io, roomId)
@@ -105,6 +113,11 @@ export function registerQueueHandlers(io: Server): void {
           console.error(
             `Failed to sync new queue item to YouTube playlist for room ${roomId}`,
             err,
+          )
+          notifyPlaylistSyncFailed(
+            io,
+            roomId,
+            `Couldn't add that video to the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
           )
         }
       })()
@@ -146,10 +159,11 @@ export function registerQueueHandlers(io: Server): void {
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
-          // Votes drive order by default (and a host vote can hand order
-          // back to the votes out of manual drag-order mode), so the real
-          // playlist may need to catch up either way.
-          schedulePlaylistSync(roomId)
+          // Votes are frequent enough that gating each one on a live YouTube
+          // round-trip would feel laggy, so this stays a debounced
+          // best-effort background sync (with a visible failure notice)
+          // rather than the confirm-before-commit flow used below.
+          schedulePlaylistSync(io, roomId)
         })()
       },
     )
@@ -172,36 +186,45 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
-          const result = await removeQueueItem({
+          const found = await findRemovableQueueItem({
             queueItemId: payload.queueItemId,
             roomId,
             participantId,
             isHost: participant.isHost,
           })
-          if ("error" in result) {
-            ack?.({ error: result.error })
+          if ("error" in found) {
+            ack?.({ error: found.error })
             return
           }
 
-          ack?.({ ok: true })
-          await broadcastRoomState(io, roomId)
-
-          if (result.removed.youtubePlaylistItemId) {
+          // Confirm the real playlist accepts the removal before touching
+          // the in-app queue — otherwise a failure here would leave the
+          // video gone from CueBall but still sitting in the actual
+          // playlist, with no way to tell from the UI.
+          if (found.item.youtubePlaylistItemId) {
             const room = await prisma.room.findUnique({ where: { id: roomId } })
             if (room?.youtubePlaylistId) {
               try {
                 await removeVideoFromPlaylist(
                   room,
-                  result.removed.youtubePlaylistItemId,
+                  found.item.youtubePlaylistItemId,
                 )
               } catch (err) {
                 console.error(
                   `Failed to remove queue item from YouTube playlist for room ${roomId}`,
                   err,
                 )
+                ack?.({
+                  error: `Couldn't remove that video from the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
+                })
+                return
               }
             }
           }
+
+          await commitQueueItemRemoval({ queueItemId: found.item.id, roomId })
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
         })()
       },
     )
@@ -224,19 +247,41 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
-          const result = await reorderQueue({
+          const prepared = await prepareQueueReorder({
             roomId,
             isHost: participant.isHost,
             orderedQueueItemIds: payload.orderedQueueItemIds ?? [],
           })
-          if ("error" in result) {
-            ack?.({ error: result.error })
+          if ("error" in prepared) {
+            ack?.({ error: prepared.error })
             return
           }
 
+          // Confirm the real playlist accepts the new order before
+          // committing it in-app — a drag that silently didn't land on
+          // YouTube's side would otherwise look identical to one that did.
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          if (room?.youtubePlaylistId) {
+            try {
+              await syncPlaylistOrderForItems(room, prepared.items)
+            } catch (err) {
+              console.error(
+                `Failed to sync reordered queue to YouTube playlist for room ${roomId}`,
+                err,
+              )
+              ack?.({
+                error: `Couldn't update the YouTube playlist order. ${describeYoutubePlaylistError(err)}`,
+              })
+              return
+            }
+          }
+
+          await commitQueueReorder({
+            roomId,
+            orderedQueueItemIds: payload.orderedQueueItemIds ?? [],
+          })
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
-          schedulePlaylistSync(roomId)
         })()
       },
     )
@@ -259,48 +304,59 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
-          const result = await setQueueItemPlayed({
+          const found = await findQueueItemForPlayedToggle({
             queueItemId: payload.queueItemId,
             roomId,
             participantId,
             isHost: participant.isHost,
             played: payload.played,
           })
-          if ("error" in result) {
-            ack?.({ error: result.error })
+          if ("error" in found) {
+            ack?.({ error: found.error })
             return
           }
 
+          // Confirm the matching real-playlist change lands first: marking
+          // played is the whole mechanism that keeps an already-watched
+          // video from replaying on the real playlist, so it can't be
+          // allowed to silently "succeed" in-app while the real playlist
+          // still has it.
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          if (room?.youtubePlaylistId) {
+            try {
+              if (payload.played && found.item.youtubePlaylistItemId) {
+                await removeVideoFromPlaylist(
+                  room,
+                  found.item.youtubePlaylistItemId,
+                )
+                await prisma.queueItem.update({
+                  where: { id: found.item.id },
+                  data: { youtubePlaylistItemId: null },
+                })
+              } else if (!payload.played && !found.item.youtubePlaylistItemId) {
+                await addVideoToPlaylist(room, found.item)
+              }
+            } catch (err) {
+              console.error(
+                `Failed to sync played-state to YouTube playlist for room ${roomId}`,
+                err,
+              )
+              ack?.({
+                error: payload.played
+                  ? `Couldn't remove that video from the YouTube playlist. ${describeYoutubePlaylistError(err)}`
+                  : `Couldn't add that video back to the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
+              })
+              return
+            }
+          }
+
+          await commitQueueItemPlayed({
+            queueItemId: found.item.id,
+            roomId,
+            played: payload.played,
+          })
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
-
-          // Keep the real playlist in sync: a played video is pulled off it
-          // so driving the TV straight from YouTube can't replay it;
-          // unmarking re-adds it (appended, not restored to its old spot).
-          const room = await prisma.room.findUnique({ where: { id: roomId } })
-          if (!room?.youtubePlaylistId) return
-
-          try {
-            if (payload.played && result.item.youtubePlaylistItemId) {
-              await removeVideoFromPlaylist(
-                room,
-                result.item.youtubePlaylistItemId,
-              )
-              await prisma.queueItem.update({
-                where: { id: result.item.id },
-                data: { youtubePlaylistItemId: null },
-              })
-              await broadcastRoomState(io, roomId)
-            } else if (!payload.played && !result.item.youtubePlaylistItemId) {
-              await addVideoToPlaylist(room, result.item)
-              await broadcastRoomState(io, roomId)
-            }
-          } catch (err) {
-            console.error(
-              `Failed to sync played-state to YouTube playlist for room ${roomId}`,
-              err,
-            )
-          }
         })()
       },
     )

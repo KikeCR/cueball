@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Github, Linkedin } from "lucide-react"
 
 const GITHUB_URL = "https://github.com/KikeCR"
@@ -11,6 +12,12 @@ export function Footer() {
       <div className="flex flex-col items-center justify-between gap-4 px-4 sm:flex-row sm:px-6">
         <p className="text-xs">&copy; {year} Luis Barrantes. Built with care.</p>
         <div className="flex items-center gap-4">
+          <Link href="/privacy" className="text-xs transition-colors hover:text-text">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-xs transition-colors hover:text-text">
+            Terms
+          </Link>
           <a
             href={GITHUB_URL}
             target="_blank"

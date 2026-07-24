@@ -25,6 +25,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     connected,
     reconnecting,
     removedReason,
+    playlistSyncError,
     voteOnQueueItem,
     removeQueueItem,
     reorderQueue,
@@ -50,6 +51,10 @@ function RoomView({ roomCode }: { roomCode: string }) {
     const timer = window.setTimeout(() => setActionError(null), 5000)
     return () => window.clearTimeout(timer)
   }, [actionError])
+
+  useEffect(() => {
+    if (playlistSyncError) setActionError(playlistSyncError.message)
+  }, [playlistSyncError])
 
   if (previewError) {
     return (

@@ -139,16 +139,21 @@ export async function castVote(params: {
   })
 }
 
-export type RemoveQueueItemResult =
-  { removed: QueueItemWithVotes } | { error: string }
+export type FindRemovableQueueItemResult =
+  { item: QueueItemWithVotes } | { error: string }
 
-/** Only the participant who added a video, or the host, may remove it. */
-export async function removeQueueItem(params: {
+/**
+ * Looks up and authorizes a removal without deleting anything yet, so the
+ * caller can confirm the real YouTube playlist accepts the removal first
+ * (see commitQueueItemRemoval) — the in-app queue shouldn't say a video is
+ * gone if it's still sitting in the actual playlist.
+ */
+export async function findRemovableQueueItem(params: {
   queueItemId: string
   roomId: string
   participantId: string
   isHost: boolean
-}): Promise<RemoveQueueItemResult> {
+}): Promise<FindRemovableQueueItemResult> {
   const item = await prisma.queueItem.findFirst({
     where: { id: params.queueItemId, roomId: params.roomId },
     include: { votes: true },
@@ -161,23 +166,33 @@ export async function removeQueueItem(params: {
       error: "Only the person who added this, or the host, can remove it",
     }
   }
-
-  await prisma.queueItem.delete({ where: { id: item.id } })
-  await touchRoomActivity(params.roomId)
-  return { removed: item }
+  return { item }
 }
 
-export type SetQueueItemPlayedResult =
+/** Deletes a queue item already confirmed removable. */
+export async function commitQueueItemRemoval(params: {
+  queueItemId: string
+  roomId: string
+}): Promise<void> {
+  await prisma.queueItem.delete({ where: { id: params.queueItemId } })
+  await touchRoomActivity(params.roomId)
+}
+
+export type FindQueueItemForPlayedToggleResult =
   { item: QueueItemWithVotes } | { error: string }
 
-/** Only the participant who added a video, or the host, may mark it played/unplayed. */
-export async function setQueueItemPlayed(params: {
+/**
+ * Looks up and authorizes a played/unplayed toggle without applying it yet
+ * — the caller confirms the matching real-playlist change (remove when
+ * marking played, re-add when un-marking) lands first.
+ */
+export async function findQueueItemForPlayedToggle(params: {
   queueItemId: string
   roomId: string
   participantId: string
   isHost: boolean
   played: boolean
-}): Promise<SetQueueItemPlayedResult> {
+}): Promise<FindQueueItemForPlayedToggleResult> {
   const item = await prisma.queueItem.findFirst({
     where: { id: params.queueItemId, roomId: params.roomId },
     include: { votes: true },
@@ -204,35 +219,50 @@ export async function setQueueItemPlayed(params: {
     }
   }
 
+  return { item }
+}
+
+/** Applies a played/unplayed toggle already confirmed against the real playlist. */
+export async function commitQueueItemPlayed(params: {
+  queueItemId: string
+  roomId: string
+  played: boolean
+}): Promise<QueueItemWithVotes> {
   const updated = await prisma.queueItem.update({
-    where: { id: item.id },
+    where: { id: params.queueItemId },
     data: { playedAt: params.played ? new Date() : null },
     include: { votes: true },
   })
   await touchRoomActivity(params.roomId)
-  return { item: updated }
+  return updated
 }
 
-export type ReorderQueueResult = { ok: true } | { error: string }
+export type PrepareQueueReorderResult =
+  { items: QueueItemWithVotes[] } | { error: string }
 
 /**
  * Only the host may manually reorder the queue. `orderedQueueItemIds` must
- * be exactly the room's current queue items, just reshuffled — a stale
- * client (someone added/removed a video mid-drag) is rejected rather than
- * silently dropping or duplicating items.
+ * be exactly the room's current *unplayed* items, just reshuffled — a stale
+ * client (someone added/removed/played a video mid-drag) is rejected rather
+ * than silently dropping or duplicating items.
+ *
+ * Returns the full item rows in the requested order without writing
+ * anything yet, so the caller can confirm the real playlist accepts the new
+ * order (via syncPlaylistOrderForItems) before calling commitQueueReorder —
+ * the in-app order shouldn't claim to be set if the real playlist disagrees.
  */
-export async function reorderQueue(params: {
+export async function prepareQueueReorder(params: {
   roomId: string
   isHost: boolean
   orderedQueueItemIds: string[]
-}): Promise<ReorderQueueResult> {
+}): Promise<PrepareQueueReorderResult> {
   if (!params.isHost) {
     return { error: "Only the host can reorder the queue" }
   }
 
   const current = await prisma.queueItem.findMany({
-    where: { roomId: params.roomId },
-    select: { id: true },
+    where: { roomId: params.roomId, playedAt: null },
+    include: { votes: true },
   })
   const currentIds = new Set(current.map((item) => item.id))
   const givenIds = new Set(params.orderedQueueItemIds)
@@ -243,6 +273,16 @@ export async function reorderQueue(params: {
     return { error: "Queue changed, please try again" }
   }
 
+  const byId = new Map(current.map((item) => [item.id, item]))
+  const items = params.orderedQueueItemIds.map((id) => byId.get(id)!)
+  return { items }
+}
+
+/** Persists a reorder already confirmed against the real playlist. */
+export async function commitQueueReorder(params: {
+  roomId: string
+  orderedQueueItemIds: string[]
+}): Promise<void> {
   await prisma.$transaction([
     ...params.orderedQueueItemIds.map((id, index) =>
       prisma.queueItem.update({ where: { id }, data: { position: index } }),
@@ -253,5 +293,4 @@ export async function reorderQueue(params: {
     }),
   ])
   await touchRoomActivity(params.roomId)
-  return { ok: true }
 }
