@@ -203,10 +203,10 @@ after 15 minutes of inactivity, so the first request after a quiet
 period takes 30-60s to wake up; fine for a small/friends deployment,
 upgrade to Render's Starter plan ($7/mo) if that's ever a problem.
 
-Pick a subdomain split before starting, e.g.:
+Domain split used here (`cuebl.com`, adjust for your own domain):
 
-- `app.yourdomain.com` → Vercel (the Next.js web app)
-- `api.yourdomain.com` → Render (the Express/Socket.io server)
+- `cuebl.com` and `www.cuebl.com` → Vercel (the Next.js web app)
+- `api.cuebl.com` → Render (the Express/Socket.io server)
 
 ### 1. Database (Neon)
 
@@ -242,38 +242,45 @@ Pick a subdomain split before starting, e.g.:
    | `DATABASE_URL` | from Neon |
    | `REDIS_URL` | from Upstash |
    | `JWT_SECRET` | output of `openssl rand -base64 48` (a fresh one, don't reuse the local dev value) |
-   | `CLIENT_ORIGIN` | `https://app.yourdomain.com` (must match the web app's URL exactly, no trailing slash) |
+   | `CLIENT_ORIGIN` | `https://cuebl.com` (must match the web app's canonical URL exactly, no trailing slash) |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | same values as local dev |
-   | `GOOGLE_REDIRECT_URI` | `https://api.yourdomain.com/api/youtube/callback` |
-   | `GOOGLE_AUTH_REDIRECT_URI` | `https://api.yourdomain.com/api/auth/google/callback` |
+   | `GOOGLE_REDIRECT_URI` | `https://api.cuebl.com/api/youtube/callback` |
+   | `GOOGLE_AUTH_REDIRECT_URI` | `https://api.cuebl.com/api/auth/google/callback` |
    | `YOUTUBE_API_KEY` | same value as local dev, if you set one up |
 
    Leave `PORT` unset: Render injects its own and the server already
    reads `process.env.PORT`.
 4. Once it's deployed, **Settings** → **Custom Domains** → add
-   `api.yourdomain.com`, and add the CNAME record it gives you at your
+   `api.cuebl.com`, and add the CNAME record it gives you at your
    domain registrar.
 
 ### 4. Web app (Vercel)
 
 1. [vercel.com](https://vercel.com) → sign up → **Add New** → **Project**
    → import the `cueball` repo.
-2. In the import screen, override:
-   - **Build Command**:
-     `npm run build --workspace=packages/shared && npm run build --workspace=apps/web`
-   - **Output Directory**: `apps/web/.next`
-   - **Install Command**: `npm install` (default; installs the whole
-     workspace, needed so `@cueball/shared` resolves)
+2. In the import screen:
+   - **Root Directory**: `apps/web` (click Edit to set it). The
+     Framework Preset should auto-switch to **Next.js** once this is
+     set.
+   - Expand **Build and Output Settings** and override the **Build
+     Command**:
+     `cd ../.. && npm install --include=dev && npm run build --workspace=packages/shared && cd apps/web && npm run build`
+     (the `cd ../..` builds `@cueball/shared` first, from the monorepo
+     root; `--include=dev` is required because Vercel's build shell
+     sets `NODE_ENV=production`, which otherwise makes a plain
+     `npm install` silently skip devDependencies like `typescript`).
+   - Leave **Output Directory** untouched; the Next.js preset manages
+     it automatically once Root Directory is set correctly.
 3. Environment variables:
 
    | Key | Value |
    |---|---|
-   | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` |
-   | `NEXT_PUBLIC_SOCKET_URL` | `https://api.yourdomain.com` |
-4. Deploy, then **Settings** → **Domains** → add `app.yourdomain.com`
-   and add the DNS record it gives you at your registrar (usually a
-   CNAME to `cname.vercel-dns.com`, or an A record if it's the apex
-   domain).
+   | `NEXT_PUBLIC_API_URL` | `https://api.cuebl.com` |
+   | `NEXT_PUBLIC_SOCKET_URL` | `https://api.cuebl.com` |
+4. Deploy, then **Settings** → **Domains** → add both `cuebl.com`
+   and `www.cuebl.com`, and add the DNS records Vercel shows you at
+   your registrar (typically an A record for the apex domain and a
+   CNAME for `www`).
 
 ### 5. Update Google Cloud Console
 
@@ -283,8 +290,8 @@ added too (keep the localhost ones; both sets can coexist):
 1. [console.cloud.google.com](https://console.cloud.google.com) → APIs
    & Services → Credentials → open the existing OAuth client →
    **Authorized redirect URIs** → add:
-   - `https://api.yourdomain.com/api/youtube/callback`
-   - `https://api.yourdomain.com/api/auth/google/callback`
+   - `https://api.cuebl.com/api/youtube/callback`
+   - `https://api.cuebl.com/api/auth/google/callback`
 2. If the OAuth consent screen is still in **Testing** status, only the
    Google accounts listed under **Test users** can sign in; add
    whichever friends' accounts need YouTube/Google sign-in, or publish

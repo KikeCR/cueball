@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
@@ -20,13 +20,22 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   google_auth_failed: "Google sign-in failed. Please try again.",
 }
 
-export default function AccountPage() {
-  const { user, loading, applyToken, logout } = useAuth()
+/**
+ * Reads the ?token=/?error= query params from the Google sign-in redirect.
+ * Isolated in its own component because useSearchParams() opts the nearest
+ * Suspense boundary into client-only rendering, and we don't want that to
+ * apply to the whole page, just this one-time redirect check.
+ */
+function GoogleCallbackHandler({
+  onExchangingChange,
+  onError,
+}: {
+  onExchangingChange: (exchanging: boolean) => void
+  onError: (message: string) => void
+}) {
+  const { applyToken } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [tab, setTab] = useState<Tab>("login")
-  const [exchangingToken, setExchangingToken] = useState(false)
-  const [googleError, setGoogleError] = useState<string | null>(null)
 
   useEffect(() => {
     const token = searchParams.get("token")
@@ -34,23 +43,43 @@ export default function AccountPage() {
     if (!token && !error) return
 
     if (error) {
-      setGoogleError(GOOGLE_ERROR_MESSAGES[error] ?? "Google sign-in failed.")
+      onError(GOOGLE_ERROR_MESSAGES[error] ?? "Google sign-in failed.")
     }
     if (token) {
-      setExchangingToken(true)
+      onExchangingChange(true)
       applyToken(token)
-        .catch(() => setGoogleError("Google sign-in failed. Please try again."))
-        .finally(() => setExchangingToken(false))
+        .catch(() => onError("Google sign-in failed. Please try again."))
+        .finally(() => onExchangingChange(false))
     }
     router.replace("/account")
     // Only ever needs to run once, right after a redirect back from Google.
   }, [])
 
-  if (loading || exchangingToken) return null
+  return null
+}
+
+export default function AccountPage() {
+  const { user, loading, logout } = useAuth()
+  const router = useRouter()
+  const [tab, setTab] = useState<Tab>("login")
+  const [exchangingToken, setExchangingToken] = useState(false)
+  const [googleError, setGoogleError] = useState<string | null>(null)
+
+  const callbackHandler = (
+    <Suspense fallback={null}>
+      <GoogleCallbackHandler
+        onExchangingChange={setExchangingToken}
+        onError={setGoogleError}
+      />
+    </Suspense>
+  )
+
+  if (loading || exchangingToken) return callbackHandler
 
   if (!user) {
     return (
       <main className="mx-auto max-w-md px-4 py-12 sm:py-16">
+        {callbackHandler}
         <Link
           href="/"
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-text"
@@ -101,6 +130,7 @@ export default function AccountPage() {
 
   return (
     <main className="mx-auto max-w-md px-4 py-12 sm:py-16">
+      {callbackHandler}
       <Link
         href="/"
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-text"
