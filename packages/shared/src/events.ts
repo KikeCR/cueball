@@ -1,9 +1,11 @@
 import type {
   AuthUser,
+  CastSessionState,
   ParticipantWithPresence,
   QueueItem,
   Room,
   RoomHistoryEntry,
+  RoomMode,
 } from "./types.js"
 
 export const SocketEvents = {
@@ -22,6 +24,12 @@ export const SocketEvents = {
   QueueSetPlayed: "queue:set-played",
 
   PlaylistSyncFailed: "playlist:sync-failed",
+
+  CastSessionStarted: "cast:session-started",
+  CastSessionEnded: "cast:session-ended",
+  CastCommand: "cast:command",
+  CastStateReport: "cast:state-report",
+  CastAdvance: "cast:advance",
 } as const
 
 export interface RoomJoinPayload {
@@ -33,6 +41,7 @@ export interface RoomStatePayload {
   room: Room
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
+  cast: CastSessionState | null
 }
 
 export interface RoomJoinResult {
@@ -42,6 +51,7 @@ export interface RoomJoinResult {
   participantToken: string
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
+  cast: CastSessionState | null
 }
 
 export interface ActionError {
@@ -55,6 +65,7 @@ export interface ActionOk {
 export interface CreateRoomRequest {
   hostName: string
   roomName?: string
+  mode?: RoomMode
 }
 
 export interface CreateRoomResponse {
@@ -101,6 +112,27 @@ export interface QueueSetPlayedPayload {
 
 export interface PlaylistSyncFailedPayload {
   reason: string
+}
+
+export interface CastSessionStartedPayload {
+  deviceName: string
+}
+
+export type CastCommandAction = "play" | "pause" | "skip" | "seek"
+
+export interface CastCommandPayload {
+  action: CastCommandAction
+  seekSeconds?: number
+}
+
+export interface CastStateReportPayload {
+  isPlaying: boolean
+  currentQueueItemId: string | null
+}
+
+export interface CastAdvanceResult {
+  nextYoutubeVideoId: string | null
+  nextQueueItemId: string | null
 }
 
 export interface RegisterRequest {

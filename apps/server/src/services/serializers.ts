@@ -16,6 +16,7 @@ export function serializeRoom(room: PrismaRoom): Room {
     id: room.id,
     code: room.code,
     name: room.name,
+    mode: room.mode === "CAST" ? "cast" : "playlist",
     hostUserId: room.hostUserId,
     // Never serialize the access/refresh tokens, only the client-safe playlist id.
     youtubePlaylistId: room.youtubePlaylistId,

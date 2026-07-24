@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { Users, ListVideo, Plus, Youtube, Loader2 } from "lucide-react"
+import { Users, ListVideo, Plus, Youtube, Cast, Loader2 } from "lucide-react"
 import type { RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
@@ -12,6 +12,7 @@ import { AddVideoForm } from "../../../components/AddVideoForm"
 import { QueueList } from "../../../components/QueueList"
 import { ConnectYoutubeButton } from "../../../components/ConnectYoutubeButton"
 import { PlaylistShare } from "../../../components/PlaylistShare"
+import { CastControlsCard } from "../../../components/CastControlsCard"
 import { CopyButton } from "../../../components/CopyButton"
 import { Card } from "../../../components/ui/card"
 import { cn } from "../../../utils/cn"
@@ -163,26 +164,37 @@ function RoomView({ roomCode }: { roomCode: string }) {
 
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
-            <Youtube className="size-3.5" /> YouTube playlist
-          </h2>
-          {room?.youtubePlaylistId ? (
-            <PlaylistShare playlistId={room.youtubePlaylistId} />
-          ) : self.isHost ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-muted">
-                Connect your YouTube account to keep a real playlist in sync
-                with this queue.
-              </p>
-              <ConnectYoutubeButton
-                roomId={room?.id ?? ""}
-                roomCode={roomCode}
-              />
-            </div>
+          {room?.mode === "cast" ? (
+            <>
+              <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
+                <Cast className="size-3.5" /> Cast to TV
+              </h2>
+              <CastControlsCard isHost={self.isHost} />
+            </>
           ) : (
-            <p className="text-sm text-muted">
-              Waiting for the host to connect a YouTube playlist.
-            </p>
+            <>
+              <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
+                <Youtube className="size-3.5" /> YouTube playlist
+              </h2>
+              {room?.youtubePlaylistId ? (
+                <PlaylistShare playlistId={room.youtubePlaylistId} />
+              ) : self.isHost ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-muted">
+                    Connect your YouTube account to keep a real playlist in sync
+                    with this queue.
+                  </p>
+                  <ConnectYoutubeButton
+                    roomId={room?.id ?? ""}
+                    roomCode={roomCode}
+                  />
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  Waiting for the host to connect a YouTube playlist.
+                </p>
+              )}
+            </>
           )}
         </Card>
 
@@ -203,7 +215,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
           <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             <Plus className="size-3.5" /> Add a video
           </h2>
-          {room?.youtubePlaylistId ? (
+          {room?.mode === "cast" || room?.youtubePlaylistId ? (
             <AddVideoForm />
           ) : (
             <p className="text-sm text-muted">

@@ -4,6 +4,7 @@ import {
   MAX_ROOM_NAME_LENGTH,
   type CreateRoomRequest,
   type CreateRoomResponse,
+  type RoomMode,
   type RoomPreview,
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
@@ -34,11 +35,14 @@ roomsRouter.post(
       return
     }
     const roomName = readTrimmedString(body.roomName, MAX_ROOM_NAME_LENGTH)
+    const mode: RoomMode | undefined =
+      body.mode === "cast" || body.mode === "playlist" ? body.mode : undefined
 
     const { room, participant } = await createRoomWithHost({
       hostName,
       roomName,
       userId: req.userId,
+      mode,
     })
     const participantToken = signParticipantToken(participant.id, room.id)
 

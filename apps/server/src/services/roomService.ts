@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto"
 import { Prisma, type Participant, type Room } from "@prisma/client"
-import { ROOM_CODE_LENGTH } from "@cueball/shared"
+import { ROOM_CODE_LENGTH, type RoomMode } from "@cueball/shared"
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import {
   serializeParticipant,
@@ -31,13 +31,15 @@ export async function createRoomWithHost(params: {
   hostName: string
   roomName?: string
   userId?: string
+  mode?: RoomMode
 }): Promise<{ room: Room; participant: Participant }> {
+  const mode = params.mode === "cast" ? "CAST" : "PLAYLIST"
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
     const code = generateRoomCode()
     try {
       return await prisma.$transaction(async (tx) => {
         const room = await tx.room.create({
-          data: { code, name: params.roomName, hostUserId: params.userId },
+          data: { code, name: params.roomName, hostUserId: params.userId, mode },
         })
         const participant = await tx.participant.create({
           data: {
@@ -268,5 +270,8 @@ export async function getRoomState(roomId: string) {
       serializeParticipant(p, connected.has(p.id)),
     ),
     queue: queueItems.map(serializeQueueItem),
+    // Populated once the Cast relay layer lands; a Cast-mode room has no
+    // live session until the host connects a TV from their browser.
+    cast: null,
   }
 }

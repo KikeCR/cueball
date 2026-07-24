@@ -2,12 +2,13 @@
 
 import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { Cast, Loader2, Youtube } from "lucide-react"
 import {
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
   type CreateRoomRequest,
   type CreateRoomResponse,
+  type RoomMode,
 } from "@cueball/shared"
 import { api } from "../../api/client"
 import { useAuth } from "../../context/AuthContext"
@@ -21,6 +22,7 @@ export function CreateRoomForm() {
   const { token, user } = useAuth()
   const [hostName, setHostName] = useState("")
   const [roomName, setRoomName] = useState("")
+  const [mode, setMode] = useState<RoomMode>("playlist")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,6 +41,7 @@ export function CreateRoomForm() {
       const request: CreateRoomRequest = {
         hostName: trimmedHostName,
         roomName: roomName.trim() || undefined,
+        mode,
       }
       const response = await api.post<CreateRoomResponse>(
         "/api/rooms",
@@ -55,6 +58,26 @@ export function CreateRoomForm() {
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+      <div className="flex gap-1 rounded-md bg-surface-hover p-1">
+        <button
+          type="button"
+          onClick={() => setMode("playlist")}
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+            mode === "playlist" ? "bg-surface text-text" : "text-muted"
+          }`}
+        >
+          <Youtube className="size-3.5" /> Playlist
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("cast")}
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+            mode === "cast" ? "bg-surface text-text" : "text-muted"
+          }`}
+        >
+          <Cast className="size-3.5" /> Cast
+        </button>
+      </div>
       <Label>
         Your name
         <Input

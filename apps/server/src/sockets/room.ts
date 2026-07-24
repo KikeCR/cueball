@@ -123,6 +123,7 @@ export function registerRoomHandlers(io: Server): void {
             participantToken: signParticipantToken(participant.id, room.id),
             participants: state.participants,
             queue: state.queue,
+            cast: state.cast,
           })
 
           socket

@@ -30,8 +30,10 @@ describe("CreateRoomForm", () => {
         id: "r1",
         code: "ABC123",
         name: null,
+        mode: "playlist",
         hostUserId: null,
         youtubePlaylistId: null,
+        manualQueueOrder: false,
         createdAt: new Date().toISOString(),
       },
       participant: {
@@ -53,11 +55,48 @@ describe("CreateRoomForm", () => {
 
     expect(api.post).toHaveBeenCalledWith(
       "/api/rooms",
-      { hostName: "Sam", roomName: undefined },
+      { hostName: "Sam", roomName: undefined, mode: "playlist" },
       undefined,
     )
     expect(localStorage.getItem("cueball:room:ABC123")).toContain("token-123")
     expect(pushMock).toHaveBeenCalledWith("/room/ABC123")
+  })
+
+  it("defaults to playlist mode, and sends cast mode once selected", async () => {
+    vi.mocked(api.post).mockResolvedValue({
+      room: {
+        id: "r1",
+        code: "ABC123",
+        name: null,
+        mode: "cast",
+        hostUserId: null,
+        youtubePlaylistId: null,
+        manualQueueOrder: false,
+        createdAt: new Date().toISOString(),
+      },
+      participant: {
+        id: "p1",
+        roomId: "r1",
+        userId: null,
+        guestName: "Sam",
+        isHost: true,
+        joinedAt: new Date().toISOString(),
+        connected: true,
+      },
+      participantToken: "token-123",
+    })
+
+    const form = new CreateRoomFormPageObject()
+
+    await form.selectCastMode()
+    await form.fillHostName("Sam")
+    await form.submit()
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/rooms",
+      { hostName: "Sam", roomName: undefined, mode: "cast" },
+      undefined,
+    )
   })
 
   it("shows an error if room creation fails", async () => {

@@ -1,12 +1,23 @@
+export type RoomMode = "playlist" | "cast"
+
 export interface Room {
   id: string
   code: string
   name: string | null
+  mode: RoomMode
   hostUserId: string | null
   youtubePlaylistId: string | null
   /** True once the host has manually reordered the queue; a host vote hands ordering back to votes. */
   manualQueueOrder: boolean
   createdAt: string
+}
+
+export interface CastSessionState {
+  connected: boolean
+  deviceName: string | null
+  casterParticipantId: string | null
+  isPlaying: boolean
+  currentQueueItemId: string | null
 }
 
 export interface Participant {

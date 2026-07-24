@@ -17,8 +17,20 @@ export class CreateRoomFormPageObject {
     return screen.getByRole("button", { name: /create room/i })
   }
 
+  get playlistModeButton() {
+    return screen.getByRole("button", { name: "Playlist" })
+  }
+
+  get castModeButton() {
+    return screen.getByRole("button", { name: "Cast" })
+  }
+
   async fillHostName(value: string) {
     await this.user.type(this.hostNameInput, value)
+  }
+
+  async selectCastMode() {
+    await this.user.click(this.castModeButton)
   }
 
   async submit() {

@@ -20,10 +20,17 @@ model User {
   @@map("users")
 }
 
+enum RoomMode {
+  PLAYLIST
+  CAST
+}
+
 model Room {
   id   String  @id @default(cuid())
   code String  @unique
   name String?
+
+  mode RoomMode @default(PLAYLIST)
 
   hostUserId String?
   hostUser   User?   @relation("RoomHost", fields: [hostUserId], references: [id], onDelete: SetNull)
