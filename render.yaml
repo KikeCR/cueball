@@ -7,6 +7,7 @@ services:
     buildCommand: >-
       npm install &&
       npm run build --workspace=packages/shared &&
+      npx prisma generate --schema apps/server/prisma/schema.prisma &&
       npm run build --workspace=apps/server &&
       npx prisma migrate deploy --schema apps/server/prisma/schema.prisma
     startCommand: node apps/server/dist/index.js

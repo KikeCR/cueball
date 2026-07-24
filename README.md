@@ -232,7 +232,7 @@ Pick a subdomain split before starting, e.g.:
    a Blueprint; accept that, it already has the right build/start
    commands and health check path. (If you'd rather click through
    manually instead: Runtime **Node**, Build Command
-   `npm install && npm run build --workspace=packages/shared && npm run build --workspace=apps/server && npx prisma migrate deploy --schema apps/server/prisma/schema.prisma`,
+   `npm install && npm run build --workspace=packages/shared && npx prisma generate --schema apps/server/prisma/schema.prisma && npm run build --workspace=apps/server && npx prisma migrate deploy --schema apps/server/prisma/schema.prisma`,
    Start Command `node apps/server/dist/index.js`, Health Check Path
    `/health`.)
 3. Set these environment variables in the service's **Environment** tab:
