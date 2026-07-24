@@ -1,8 +1,6 @@
-import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
-import { QueueList } from "./QueueList"
+import { QueueListPageObject } from "../../test/page-objects/QueueListPageObject"
 
 const host: ParticipantWithPresence = {
   id: "p1",
@@ -44,94 +42,74 @@ function makeItem(overrides: Partial<QueueItem> = {}): QueueItem {
 
 describe("QueueList", () => {
   it("shows an empty state when there are no items", () => {
-    render(
-      <QueueList
-        queue={[]}
-        participants={participants}
-        selfId={null}
-        onVote={vi.fn()}
-        onRemove={vi.fn()}
-      />,
-    )
-    expect(screen.getByText(/queue is empty/i)).toBeInTheDocument()
+    const queueList = new QueueListPageObject({
+      queue: [],
+      participants,
+      selfId: null,
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
+    expect(queueList.emptyMessage).toBeInTheDocument()
   })
 
   it("shows the score, who added it, and calls onVote", async () => {
     const onVote = vi.fn()
     const item = makeItem({ score: 3 })
-    render(
-      <QueueList
-        queue={[item]}
-        participants={participants}
-        selfId="p1"
-        onVote={onVote}
-        onRemove={vi.fn()}
-      />,
-    )
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote,
+      onRemove: vi.fn(),
+    })
 
-    expect(screen.getByText(/added by Sam/)).toBeInTheDocument()
-    expect(screen.getByLabelText("score")).toHaveTextContent("3")
+    expect(queueList.hasText(/added by Sam/)).toBe(true)
+    expect(queueList.score).toHaveTextContent("3")
 
-    const user = userEvent.setup()
-    await user.click(screen.getByRole("button", { name: "Upvote" }))
+    await queueList.clickUpvote()
     expect(onVote).toHaveBeenCalledWith("q1", 1)
   })
 
   it("marks the upvote button pressed when the current user already upvoted", () => {
     const item = makeItem({ votes: [{ participantId: "p1", value: 1 }] })
-    render(
-      <QueueList
-        queue={[item]}
-        participants={participants}
-        selfId="p1"
-        onVote={vi.fn()}
-        onRemove={vi.fn()}
-      />,
-    )
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
 
-    expect(screen.getByRole("button", { name: "Upvote" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    )
-    expect(screen.getByRole("button", { name: "Downvote" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    )
+    expect(queueList.upvoteButton).toHaveAttribute("aria-pressed", "true")
+    expect(queueList.downvoteButton).toHaveAttribute("aria-pressed", "false")
   })
 
   it("lets the person who added a video remove it", async () => {
     const onRemove = vi.fn()
     const item = makeItem({ addedByParticipantId: "p2" })
-    render(
-      <QueueList
-        queue={[item]}
-        participants={participants}
-        selfId="p2"
-        onVote={vi.fn()}
-        onRemove={onRemove}
-      />,
-    )
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p2",
+      onVote: vi.fn(),
+      onRemove,
+    })
 
-    const user = userEvent.setup()
-    await user.click(screen.getByRole("button", { name: "Remove from queue" }))
+    await queueList.clickRemove()
     expect(onRemove).toHaveBeenCalledWith("q1")
   })
 
   it("lets the host remove a video someone else added", () => {
     const item = makeItem({ addedByParticipantId: "p2" })
-    render(
-      <QueueList
-        queue={[item]}
-        participants={participants}
-        selfId="p1"
-        onVote={vi.fn()}
-        onRemove={vi.fn()}
-      />,
-    )
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
 
-    expect(
-      screen.getByRole("button", { name: "Remove from queue" }),
-    ).toBeInTheDocument()
+    expect(queueList.removeButton).toBeInTheDocument()
   })
 
   it("hides the remove button from a guest who didn't add the video and isn't host", () => {
@@ -141,18 +119,14 @@ describe("QueueList", () => {
       guestName: "Alex",
     }
     const item = makeItem({ addedByParticipantId: "p2" })
-    render(
-      <QueueList
-        queue={[item]}
-        participants={[...participants, other]}
-        selfId="p3"
-        onVote={vi.fn()}
-        onRemove={vi.fn()}
-      />,
-    )
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants: [...participants, other],
+      selfId: "p3",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
 
-    expect(
-      screen.queryByRole("button", { name: "Remove from queue" }),
-    ).not.toBeInTheDocument()
+    expect(queueList.removeButton).not.toBeInTheDocument()
   })
 })

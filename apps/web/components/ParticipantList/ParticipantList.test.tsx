@@ -1,7 +1,6 @@
-import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import type { ParticipantWithPresence } from "@cueball/shared"
-import { ParticipantList } from "./ParticipantList"
+import { ParticipantListPageObject } from "../../test/page-objects/ParticipantListPageObject"
 
 function makeParticipant(
   overrides: Partial<ParticipantWithPresence> = {},
@@ -20,8 +19,8 @@ function makeParticipant(
 
 describe("ParticipantList", () => {
   it("renders a message when there are no participants", () => {
-    render(<ParticipantList participants={[]} selfId={null} />)
-    expect(screen.getByText("No one here yet.")).toBeInTheDocument()
+    const list = new ParticipantListPageObject({ participants: [], selfId: null })
+    expect(list.emptyMessage).toBeInTheDocument()
   })
 
   it("labels the host and the current user", () => {
@@ -35,12 +34,15 @@ describe("ParticipantList", () => {
       guestName: "Riley",
       connected: false,
     })
-    render(<ParticipantList participants={[host, guest]} selfId="guest-1" />)
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "guest-1",
+    })
 
-    expect(screen.getByText("Sam")).toBeInTheDocument()
-    expect(screen.getByText("host")).toBeInTheDocument()
-    expect(screen.getByText("Riley")).toBeInTheDocument()
-    expect(screen.getByText("you")).toBeInTheDocument()
-    expect(screen.getByLabelText("disconnected")).toBeInTheDocument()
+    expect(list.hasName("Sam")).toBe(true)
+    expect(list.hostBadge).toBeInTheDocument()
+    expect(list.hasName("Riley")).toBe(true)
+    expect(list.selfBadge).toBeInTheDocument()
+    expect(list.presenceIndicator("disconnected")).toBeInTheDocument()
   })
 })

@@ -1,26 +1,19 @@
 import type {
+  AuthUser,
   ParticipantWithPresence,
-  PlaybackState,
   QueueItem,
   Room,
+  RoomHistoryEntry,
 } from "./types.js"
 
 export const SocketEvents = {
   RoomJoin: "room:join",
   RoomLeave: "room:leave",
   RoomState: "room:state",
-  RoomControllerChanged: "room:controllerChanged",
 
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
   QueueRemove: "queue:remove",
-
-  PlaybackPlay: "playback:play",
-  PlaybackPause: "playback:pause",
-  PlaybackSeek: "playback:seek",
-  PlaybackSync: "playback:sync",
-
-  ControlHandoff: "control:handoff",
 } as const
 
 export interface RoomJoinPayload {
@@ -76,19 +69,23 @@ export interface QueueRemovePayload {
   queueItemId: string
 }
 
-export interface PlaybackSeekPayload {
-  roomId: string
-  position: number
+export interface RegisterRequest {
+  email: string
+  password: string
+  displayName: string
 }
 
-export interface PlaybackSyncPayload {
-  trackId: string | null
-  position: number
-  isPlaying: boolean
-  playbackState: PlaybackState
+export interface LoginRequest {
+  email: string
+  password: string
 }
 
-export interface ControlHandoffPayload {
-  roomId: string
-  toParticipantId: string
+export interface AuthResponse {
+  user: AuthUser
+  /** Persisted client-side and sent as the Authorization bearer token. */
+  token: string
+}
+
+export interface RoomHistoryResponse {
+  rooms: RoomHistoryEntry[]
 }

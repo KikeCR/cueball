@@ -25,6 +25,7 @@ import {
   getStoredParticipantToken,
   storeParticipantToken,
 } from "../utils/participantSession"
+import { getStoredUserToken } from "../utils/authSession"
 import { decodeJwtPayload } from "../utils/jwt"
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
@@ -94,7 +95,10 @@ export function RoomProvider({
       if (decoded) setSelfId(decoded.participantId)
     }
 
-    const socket = io(SOCKET_URL, { auth: token ? { token } : {} })
+    const userToken = getStoredUserToken()
+    const socket = io(SOCKET_URL, {
+      auth: { ...(token ? { token } : {}), ...(userToken ? { userToken } : {}) },
+    })
     socketRef.current = socket
 
     socket.on("connect", () => setConnected(true))

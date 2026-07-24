@@ -1,5 +1,6 @@
 import type { Server } from "socket.io"
 import {
+  MAX_NAME_LENGTH,
   SocketEvents,
   type ActionError,
   type RoomJoinPayload,
@@ -16,11 +17,10 @@ import { prisma } from "../services/prisma.js"
 import {
   signParticipantToken,
   verifyParticipantToken,
+  verifyUserToken,
 } from "../services/tokens.js"
 import { broadcastRoomState } from "./broadcast.js"
 import type { RoomSocket } from "./types.js"
-
-const MAX_GUEST_NAME_LENGTH = 40
 
 async function reconnect(
   socket: RoomSocket,
@@ -53,6 +53,10 @@ async function leaveCurrentRoom(io: Server, socket: RoomSocket): Promise<void> {
 
 export function registerRoomHandlers(io: Server): void {
   io.on("connection", (socket: RoomSocket) => {
+    const userToken = socket.handshake.auth?.userToken as string | undefined
+    const decodedUser = userToken ? verifyUserToken(userToken) : null
+    if (decodedUser) socket.data.userId = decodedUser.userId
+
     void (async () => {
       const token = socket.handshake.auth?.token as string | undefined
       if (!token) return
@@ -75,7 +79,7 @@ export function registerRoomHandlers(io: Server): void {
         void (async () => {
           const guestName = payload.guestName
             ?.trim()
-            .slice(0, MAX_GUEST_NAME_LENGTH)
+            .slice(0, MAX_NAME_LENGTH)
           if (!guestName) {
             ack?.({ error: "guestName is required" })
             return
@@ -92,6 +96,7 @@ export function registerRoomHandlers(io: Server): void {
           const participant = await addParticipant({
             roomId: room.id,
             guestName,
+            userId: socket.data.userId,
           })
 
           socket.data.participantId = participant.id

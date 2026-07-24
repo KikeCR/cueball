@@ -75,7 +75,7 @@ export function QueueList({
                 aria-pressed={myVote === 1}
                 onClick={() => onVote(item.id, 1)}
                 className={cn(
-                  "rounded-sm border border-border p-1 text-muted transition-colors hover:bg-surface-hover",
+                  "rounded-md border border-border p-1.5 text-muted transition-colors hover:bg-surface-hover",
                   myVote === 1 && "border-upvote bg-upvote/15 text-upvote",
                 )}
               >
@@ -93,7 +93,7 @@ export function QueueList({
                 aria-pressed={myVote === -1}
                 onClick={() => onVote(item.id, -1)}
                 className={cn(
-                  "rounded-sm border border-border p-1 text-muted transition-colors hover:bg-surface-hover",
+                  "rounded-md border border-border p-1.5 text-muted transition-colors hover:bg-surface-hover",
                   myVote === -1 &&
                     "border-downvote bg-downvote/15 text-downvote",
                 )}
@@ -107,7 +107,7 @@ export function QueueList({
                 type="button"
                 aria-label="Remove from queue"
                 onClick={() => onRemove(item.id)}
-                className="shrink-0 rounded-sm p-1 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
               >
                 <X className="size-4" />
               </button>

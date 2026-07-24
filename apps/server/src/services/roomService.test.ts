@@ -16,7 +16,11 @@ vi.mock("../redis/presence.js", () => ({
 
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import { prisma } from "./prisma.js"
-import { sweepExpiredRooms, touchRoomActivity } from "./roomService.js"
+import {
+  getUserRoomHistory,
+  sweepExpiredRooms,
+  touchRoomActivity,
+} from "./roomService.js"
 
 describe("touchRoomActivity", () => {
   it("bumps lastActiveAt to now", async () => {
@@ -91,5 +95,44 @@ describe("sweepExpiredRooms", () => {
     expect(prisma.room.delete).toHaveBeenCalledTimes(1)
     expect(prisma.room.delete).toHaveBeenCalledWith({ where: { id: "room-1" } })
     expect(count).toBe(1)
+  })
+})
+
+describe("getUserRoomHistory", () => {
+  it("marks isHost based on whether the room's hostUserId matches", async () => {
+    const lastActiveAt = new Date()
+    vi.mocked(prisma.room.findMany).mockResolvedValue([
+      {
+        id: "room-1",
+        code: "AAA111",
+        name: "Hosted room",
+        hostUserId: "user-1",
+        lastActiveAt,
+      },
+      {
+        id: "room-2",
+        code: "BBB222",
+        name: "Joined room",
+        hostUserId: "someone-else",
+        lastActiveAt,
+      },
+    ] as never)
+
+    const history = await getUserRoomHistory("user-1")
+
+    expect(prisma.room.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { hostUserId: "user-1" },
+            { participants: { some: { userId: "user-1" } } },
+          ],
+        },
+      }),
+    )
+    expect(history).toEqual([
+      { id: "room-1", code: "AAA111", name: "Hosted room", isHost: true, lastActiveAt },
+      { id: "room-2", code: "BBB222", name: "Joined room", isHost: false, lastActiveAt },
+    ])
   })
 })

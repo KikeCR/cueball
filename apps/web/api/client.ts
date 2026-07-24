@@ -29,11 +29,17 @@ async function request<T>(
   return res.json() as Promise<T>
 }
 
+function authHeaders(token?: string): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  get: <T>(path: string, token?: string) =>
+    request<T>(path, { headers: authHeaders(token) }),
+  post: <T>(path: string, body?: unknown, token?: string) =>
     request<T>(path, {
       method: "POST",
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: authHeaders(token),
     }),
 }

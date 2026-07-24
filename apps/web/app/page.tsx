@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { ROOM_CODE_LENGTH } from "@cueball/shared"
 import { CreateRoomForm } from "../components/CreateRoomForm"
 import { Card } from "../components/ui/card"
 import { Button } from "../components/ui/button"
@@ -48,7 +49,7 @@ export default function HomePage() {
                 onChange={(event) =>
                   setRoomCode(event.target.value.toUpperCase())
                 }
-                maxLength={6}
+                maxLength={ROOM_CODE_LENGTH}
                 placeholder="ABC123"
                 className="font-mono tracking-widest"
                 required
