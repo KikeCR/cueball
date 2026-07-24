@@ -11,7 +11,10 @@ vi.mock("./prisma.js", () => ({
       findUnique: vi.fn(),
       findFirst: vi.fn(),
       delete: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }))
 
@@ -22,6 +25,7 @@ vi.mock("../redis/presence.js", () => ({
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import { prisma } from "./prisma.js"
 import {
+  addParticipant,
   getUserRoomHistory,
   removeParticipant,
   sweepExpiredRooms,
@@ -140,6 +144,83 @@ describe("getUserRoomHistory", () => {
       { id: "room-1", code: "AAA111", name: "Hosted room", isHost: true, lastActiveAt },
       { id: "room-2", code: "BBB222", name: "Joined room", isHost: false, lastActiveAt },
     ])
+  })
+})
+
+describe("addParticipant", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.participant.findUnique).mockReset()
+    vi.mocked(prisma.participant.create).mockReset()
+    vi.mocked(prisma.participant.update).mockReset()
+    vi.mocked(prisma.room.update).mockReset().mockResolvedValue({} as never)
+    vi.mocked(prisma.$transaction).mockImplementation(
+      ((callback: (tx: typeof prisma) => Promise<unknown>) =>
+        callback(prisma)) as unknown as typeof prisma.$transaction,
+    )
+  })
+
+  it("creates a fresh row for a guest with no userId", async () => {
+    vi.mocked(prisma.participant.create).mockResolvedValue({
+      id: "p-1",
+      userId: undefined,
+    } as never)
+
+    await addParticipant({ roomId: "room-1", guestName: "Guest" })
+
+    expect(prisma.participant.findUnique).not.toHaveBeenCalled()
+    expect(prisma.participant.create).toHaveBeenCalledWith({
+      data: { roomId: "room-1", guestName: "Guest", isHost: false, userId: undefined },
+    })
+  })
+
+  it("creates a fresh row the first time an authenticated user joins a room", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue(null)
+    vi.mocked(prisma.participant.create).mockResolvedValue({
+      id: "p-1",
+      userId: "user-1",
+    } as never)
+
+    await addParticipant({ roomId: "room-1", guestName: "Luis", userId: "user-1" })
+
+    expect(prisma.participant.findUnique).toHaveBeenCalledWith({
+      where: { roomId_userId: { roomId: "room-1", userId: "user-1" } },
+    })
+    expect(prisma.participant.create).toHaveBeenCalledWith({
+      data: { roomId: "room-1", guestName: "Luis", isHost: false, userId: "user-1" },
+    })
+  })
+
+  it("reuses the existing participant when the same account joins again (e.g. from another device)", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "p-1",
+      roomId: "room-1",
+      userId: "user-1",
+      guestName: "Luis",
+    } as never)
+    vi.mocked(prisma.participant.update).mockResolvedValue({
+      id: "p-1",
+      roomId: "room-1",
+      userId: "user-1",
+      guestName: "Luis B",
+    } as never)
+
+    const result = await addParticipant({
+      roomId: "room-1",
+      guestName: "Luis B",
+      userId: "user-1",
+    })
+
+    expect(prisma.participant.create).not.toHaveBeenCalled()
+    expect(prisma.participant.update).toHaveBeenCalledWith({
+      where: { id: "p-1" },
+      data: { guestName: "Luis B" },
+    })
+    expect(result).toEqual({
+      id: "p-1",
+      roomId: "room-1",
+      userId: "user-1",
+      guestName: "Luis B",
+    })
   })
 })
 
