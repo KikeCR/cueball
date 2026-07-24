@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { Users, ListVideo, Plus, Youtube } from "lucide-react"
+import { Users, ListVideo, Plus, Youtube, Loader2 } from "lucide-react"
 import type { RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
@@ -55,8 +55,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
 
   if (reconnecting) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <p className="text-muted">Reconnecting…</p>
+      <main className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className="relative flex size-14 items-center justify-center">
+          <span className="absolute inline-flex size-14 animate-ping rounded-full bg-primary/30" />
+          <Loader2 className="relative size-8 animate-spin text-primary" />
+        </div>
+        <p className="text-sm font-semibold text-muted">Reconnecting…</p>
       </main>
     )
   }
