@@ -27,7 +27,10 @@ function RoomView({ roomCode }: { roomCode: string }) {
     removedReason,
     voteOnQueueItem,
     removeQueueItem,
+    reorderQueue,
+    setQueueItemPlayed,
     removeParticipant,
+    renameSelf,
   } = useRoom()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -91,9 +94,27 @@ function RoomView({ roomCode }: { roomCode: string }) {
     })
   }
 
+  const handleReorder = (orderedQueueItemIds: string[]) => {
+    reorderQueue(orderedQueueItemIds).catch((err: unknown) => {
+      console.error("Failed to reorder queue", err)
+    })
+  }
+
+  const handleSetPlayed = (queueItemId: string, played: boolean) => {
+    setQueueItemPlayed(queueItemId, played).catch((err: unknown) => {
+      console.error("Failed to update played state", err)
+    })
+  }
+
   const handleRemoveParticipant = (participantId: string) => {
     removeParticipant(participantId).catch((err: unknown) => {
       console.error("Failed to remove participant", err)
+    })
+  }
+
+  const handleRename = (name: string) => {
+    renameSelf(name).catch((err: unknown) => {
+      console.error("Failed to rename", err)
     })
   }
 
@@ -152,6 +173,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             selfId={self.id}
             isSelfHost={self.isHost}
             onRemove={handleRemoveParticipant}
+            onRename={handleRename}
           />
         </Card>
 
@@ -179,6 +201,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
             selfId={self.id}
             onVote={handleVote}
             onRemove={handleRemove}
+            onReorder={handleReorder}
+            onSetPlayed={handleSetPlayed}
+            manualOrderActive={Boolean(room?.manualQueueOrder)}
           />
         </Card>
       </div>

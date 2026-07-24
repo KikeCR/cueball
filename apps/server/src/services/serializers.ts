@@ -19,6 +19,7 @@ export function serializeRoom(room: PrismaRoom): Room {
     hostUserId: room.hostUserId,
     // Never serialize the access/refresh tokens, only the client-safe playlist id.
     youtubePlaylistId: room.youtubePlaylistId,
+    manualQueueOrder: room.manualQueueOrder,
     createdAt: room.createdAt.toISOString(),
   }
 }

@@ -1,5 +1,6 @@
 import type { QueueItem, Room } from "@prisma/client"
 import { prisma } from "./prisma.js"
+import { sortQueueItems } from "./roomService.js"
 import { getAuthorizedYoutubeClient } from "./youtubeAuth.js"
 
 export async function createPlaylistForRoom(room: Room): Promise<string> {
@@ -67,11 +68,9 @@ export async function syncPlaylistOrder(roomId: string): Promise<void> {
   if (!room?.youtubePlaylistId) return
   const playlistId = room.youtubePlaylistId
 
-  const allItems = await prisma.queueItem.findMany({
-    where: { roomId },
-    orderBy: [{ score: "desc" }, { createdAt: "asc" }],
-  })
-  const syncedItems = allItems.filter(
+  const allItems = await prisma.queueItem.findMany({ where: { roomId } })
+  const sortedItems = sortQueueItems(allItems, room.manualQueueOrder)
+  const syncedItems = sortedItems.filter(
     (item): item is typeof item & { youtubePlaylistItemId: string } =>
       item.youtubePlaylistItemId !== null,
   )

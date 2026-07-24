@@ -36,6 +36,11 @@ model Room {
   createdAt    DateTime @default(now())
   lastActiveAt DateTime @default(now())
 
+  // Queue order defaults to vote score. A host drag-reorder switches this on,
+  // making `QueueItem.position` the source of truth instead; a host vote
+  // switches it back off, handing ordering back to the votes.
+  manualQueueOrder Boolean @default(false)
+
   participants Participant[] @relation("RoomParticipants")
   queueItems   QueueItem[]   @relation("RoomQueueItems")
 
@@ -80,6 +85,9 @@ model QueueItem {
   addedBy              Participant? @relation("QueueItemAddedBy", fields: [addedByParticipantId], references: [id], onDelete: SetNull)
 
   score     Int       @default(0)
+  // Explicit play-order, independent of score. Appended items get
+  // max(position)+1; host reorder rewrites every item's position in the room.
+  position  Int       @default(0)
   playedAt  DateTime?
   createdAt DateTime  @default(now())
 

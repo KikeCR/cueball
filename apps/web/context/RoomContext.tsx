@@ -66,7 +66,10 @@ interface RoomContextValue {
   addToQueue: (youtubeUrl: string) => Promise<void>
   voteOnQueueItem: (queueItemId: string, value: 1 | -1) => Promise<void>
   removeQueueItem: (queueItemId: string) => Promise<void>
+  reorderQueue: (orderedQueueItemIds: string[]) => Promise<void>
+  setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
+  renameSelf: (name: string) => Promise<void>
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -193,11 +196,34 @@ export function RoomProvider({
     [],
   )
 
+  const reorderQueue = useCallback(
+    (orderedQueueItemIds: string[]) =>
+      emitAction(socketRef.current, SocketEvents.QueueReorder, {
+        orderedQueueItemIds,
+      }),
+    [],
+  )
+
+  const setQueueItemPlayed = useCallback(
+    (queueItemId: string, played: boolean) =>
+      emitAction(socketRef.current, SocketEvents.QueueSetPlayed, {
+        queueItemId,
+        played,
+      }),
+    [],
+  )
+
   const removeParticipant = useCallback(
     (participantId: string) =>
       emitAction(socketRef.current, SocketEvents.ParticipantRemove, {
         participantId,
       }),
+    [],
+  )
+
+  const renameSelf = useCallback(
+    (name: string) =>
+      emitAction(socketRef.current, SocketEvents.ParticipantRename, { name }),
     [],
   )
 
@@ -218,7 +244,10 @@ export function RoomProvider({
         addToQueue,
         voteOnQueueItem,
         removeQueueItem,
+        reorderQueue,
+        setQueueItemPlayed,
         removeParticipant,
+        renameSelf,
       }}
     >
       {children}

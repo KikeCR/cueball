@@ -8,6 +8,7 @@ interface ParticipantListProps {
   selfId: string | null
   isSelfHost?: boolean
   onRemove?: (participantId: string) => void
+  onRename?: (name: string) => void
 }
 
 export class ParticipantListPageObject {
@@ -45,5 +46,47 @@ export class ParticipantListPageObject {
     const button = this.removeButton(name)
     if (!button) throw new Error(`Remove button for ${name} is not rendered`)
     await this.user.click(button)
+  }
+
+  get editNameButton() {
+    return screen.queryByRole("button", { name: "Edit your name" })
+  }
+
+  get nameInput() {
+    return screen.queryByLabelText("Your name") as HTMLInputElement | null
+  }
+
+  get saveNameButton() {
+    return screen.queryByRole("button", { name: "Save name" })
+  }
+
+  get cancelEditButton() {
+    return screen.queryByRole("button", { name: "Cancel" })
+  }
+
+  async renameTo(name: string) {
+    if (!this.editNameButton) throw new Error("Edit name button is not rendered")
+    await this.user.click(this.editNameButton)
+    const input = this.nameInput
+    if (!input) throw new Error("Name input did not appear")
+    await this.user.clear(input)
+    await this.user.type(input, name)
+    const saveButton = this.saveNameButton
+    if (!saveButton) throw new Error("Save button did not appear")
+    await this.user.click(saveButton)
+  }
+
+  async startRenameAndType(draft: string) {
+    if (!this.editNameButton) throw new Error("Edit name button is not rendered")
+    await this.user.click(this.editNameButton)
+    const input = this.nameInput
+    if (!input) throw new Error("Name input did not appear")
+    await this.user.clear(input)
+    await this.user.type(input, draft)
+  }
+
+  async cancelRename() {
+    if (!this.cancelEditButton) throw new Error("Cancel button is not rendered")
+    await this.user.click(this.cancelEditButton)
   }
 }

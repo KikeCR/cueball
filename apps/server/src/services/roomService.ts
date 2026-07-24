@@ -104,6 +104,20 @@ export async function addParticipant(params: {
   })
 }
 
+/** Lets a participant change their own display name for the rest of the room. */
+export async function renameParticipant(params: {
+  participantId: string
+  roomId: string
+  name: string
+}): Promise<Participant> {
+  const participant = await prisma.participant.update({
+    where: { id: params.participantId },
+    data: { guestName: params.name },
+  })
+  await touchRoomActivity(params.roomId)
+  return participant
+}
+
 export type RemoveParticipantResult =
   | { removed: Participant }
   | { error: string }
@@ -195,18 +209,57 @@ export async function getUserRoomHistory(userId: string): Promise<
   }))
 }
 
+/**
+ * Queue order defaults to vote score; `manualQueueOrder` (flipped on by a
+ * host drag, off by a host vote) switches to the explicit `position` field
+ * instead. Shared with `syncPlaylistOrder` so the real YouTube playlist and
+ * the in-app queue never disagree about which mode is active.
+ */
+export function sortQueueItems<
+  T extends { score: number; position: number; createdAt: Date },
+>(items: T[], manualOrder: boolean): T[] {
+  const sorted = [...items]
+  if (manualOrder) {
+    sorted.sort((a, b) => a.position - b.position)
+  } else {
+    sorted.sort(
+      (a, b) => b.score - a.score || a.createdAt.getTime() - b.createdAt.getTime(),
+    )
+  }
+  return sorted
+}
+
+/**
+ * Unplayed items lead, in the room's current order mode; played items trail,
+ * most-recently-played first, so the client can render them as a dimmed
+ * "already watched" section below the upcoming queue.
+ */
+export function orderQueueForRoom<
+  T extends {
+    score: number
+    position: number
+    createdAt: Date
+    playedAt: Date | null
+  },
+>(items: T[], manualOrder: boolean): T[] {
+  const unplayed = items.filter((item) => !item.playedAt)
+  const played = items
+    .filter((item) => item.playedAt)
+    .sort((a, b) => b.playedAt!.getTime() - a.playedAt!.getTime())
+  return [...sortQueueItems(unplayed, manualOrder), ...played]
+}
+
 export async function getRoomState(roomId: string) {
   const room = await prisma.room.findUnique({
     where: { id: roomId },
     include: {
       participants: true,
-      queueItems: {
-        include: { votes: true },
-        orderBy: [{ score: "desc" }, { createdAt: "asc" }],
-      },
+      queueItems: { include: { votes: true } },
     },
   })
   if (!room) return null
+
+  const queueItems = orderQueueForRoom(room.queueItems, room.manualQueueOrder)
 
   const connected = await getConnectedParticipantIds(roomId)
   return {
@@ -214,6 +267,6 @@ export async function getRoomState(roomId: string) {
     participants: room.participants.map((p) =>
       serializeParticipant(p, connected.has(p.id)),
     ),
-    queue: room.queueItems.map(serializeQueueItem),
+    queue: queueItems.map(serializeQueueItem),
   }
 }

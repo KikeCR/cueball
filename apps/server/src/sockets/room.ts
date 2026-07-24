@@ -6,6 +6,7 @@ import {
   type ActionOk,
   type ParticipantRemovePayload,
   type ParticipantRemovedPayload,
+  type ParticipantRenamePayload,
   type RoomJoinPayload,
   type RoomJoinResult,
   type RoomStatePayload,
@@ -15,6 +16,7 @@ import {
   addParticipant,
   getRoomState,
   removeParticipant,
+  renameParticipant,
   touchRoomActivity,
 } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
@@ -161,6 +163,33 @@ export function registerRoomHandlers(io: Server): void {
             } satisfies ParticipantRemovedPayload)
             remote.disconnect(true)
           }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.ParticipantRename,
+      (
+        payload: ParticipantRenamePayload,
+        ack?: (result: ActionOk | ActionError) => void,
+      ) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const name = payload.name?.trim().slice(0, MAX_NAME_LENGTH)
+          if (!name) {
+            ack?.({ error: "Name can't be empty" })
+            return
+          }
+
+          await renameParticipant({ participantId, roomId, name })
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)

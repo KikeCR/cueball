@@ -4,6 +4,8 @@ export interface Room {
   name: string | null
   hostUserId: string | null
   youtubePlaylistId: string | null
+  /** True once the host has manually reordered the queue; a host vote hands ordering back to votes. */
+  manualQueueOrder: boolean
   createdAt: string
 }
 

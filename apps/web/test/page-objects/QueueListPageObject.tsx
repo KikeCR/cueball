@@ -9,6 +9,9 @@ interface QueueListProps {
   selfId: string | null
   onVote: (queueItemId: string, value: 1 | -1) => void
   onRemove: (queueItemId: string) => void
+  onReorder?: (orderedQueueItemIds: string[]) => void
+  onSetPlayed?: (queueItemId: string, played: boolean) => void
+  manualOrderActive?: boolean
 }
 
 export class QueueListPageObject {
@@ -42,6 +45,22 @@ export class QueueListPageObject {
     return screen.queryByRole("button", { name: "Remove from queue" })
   }
 
+  get dragHandles() {
+    return screen.queryAllByRole("button", { name: "Drag to reorder" })
+  }
+
+  get markPlayedButton() {
+    return screen.queryByRole("button", { name: "Mark as played" })
+  }
+
+  get markUnplayedButton() {
+    return screen.queryByRole("button", { name: "Mark as not played" })
+  }
+
+  get playedHeading() {
+    return screen.queryByText("Played videos")
+  }
+
   async clickUpvote() {
     await this.user.click(this.upvoteButton)
   }
@@ -49,6 +68,18 @@ export class QueueListPageObject {
   async clickRemove() {
     const button = this.removeButton
     if (!button) throw new Error("Remove button is not rendered")
+    await this.user.click(button)
+  }
+
+  async clickMarkPlayed() {
+    const button = this.markPlayedButton
+    if (!button) throw new Error("Mark as played button is not rendered")
+    await this.user.click(button)
+  }
+
+  async clickMarkUnplayed() {
+    const button = this.markUnplayedButton
+    if (!button) throw new Error("Mark as not played button is not rendered")
     await this.user.click(button)
   }
 }
