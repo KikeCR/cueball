@@ -190,10 +190,115 @@ length are allowed through, rather than blocking adds altogether.
 See [`apps/server/prisma/schema.prisma`](apps/server/prisma/schema.prisma)
 for the full schema.
 
-## Roadmap
+## Production deployment
 
-Not built yet:
+Everything below is configuration, not code: every environment-specific
+value (CORS origin, database, Redis, OAuth redirect URIs, API base URL)
+was already read from an env var, so shipping this to a real domain
+doesn't need any code changes.
 
-- **Production deployment**: hosting for the server/web apps, a
-  production Postgres/Redis, and a second set of OAuth redirect URIs for
-  the live domain.
+Stack: **Vercel** (web), **Render** (server, free web service), **Neon**
+(Postgres, free), **Upstash** (Redis, free). Render's free tier sleeps
+after 15 minutes of inactivity, so the first request after a quiet
+period takes 30-60s to wake up; fine for a small/friends deployment,
+upgrade to Render's Starter plan ($7/mo) if that's ever a problem.
+
+Pick a subdomain split before starting, e.g.:
+
+- `app.yourdomain.com` → Vercel (the Next.js web app)
+- `api.yourdomain.com` → Render (the Express/Socket.io server)
+
+### 1. Database (Neon)
+
+1. [neon.tech](https://neon.tech) → sign up → **New Project**.
+2. Copy the connection string it gives you (starts `postgresql://...`,
+   already includes `?sslmode=require`); this is `DATABASE_URL`.
+
+### 2. Redis (Upstash)
+
+1. [upstash.com](https://upstash.com) → sign up → **Create Database**
+   → type **Redis** (not QStash/Vector) → pick a region close to
+   wherever you put the Render service.
+2. Copy the **TLS** connection string (starts `rediss://...`); this is
+   `REDIS_URL`. `ioredis` (already in use) turns on TLS automatically
+   for a `rediss://` URL, no code change needed.
+
+### 3. Server (Render)
+
+1. [render.com](https://render.com) → sign up → connect your GitHub
+   account → give it access to the `cueball` repo.
+2. **New** → **Web Service** → pick the repo. Render should detect the
+   [`render.yaml`](render.yaml) in the repo root and offer to use it as
+   a Blueprint; accept that, it already has the right build/start
+   commands and health check path. (If you'd rather click through
+   manually instead: Runtime **Node**, Build Command
+   `npm install && npm run build --workspace=packages/shared && npm run build --workspace=apps/server && npx prisma migrate deploy --schema apps/server/prisma/schema.prisma`,
+   Start Command `node apps/server/dist/index.js`, Health Check Path
+   `/health`.)
+3. Set these environment variables in the service's **Environment** tab:
+
+   | Key | Value |
+   |---|---|
+   | `DATABASE_URL` | from Neon |
+   | `REDIS_URL` | from Upstash |
+   | `JWT_SECRET` | output of `openssl rand -base64 48` (a fresh one, don't reuse the local dev value) |
+   | `CLIENT_ORIGIN` | `https://app.yourdomain.com` (must match the web app's URL exactly, no trailing slash) |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | same values as local dev |
+   | `GOOGLE_REDIRECT_URI` | `https://api.yourdomain.com/api/youtube/callback` |
+   | `GOOGLE_AUTH_REDIRECT_URI` | `https://api.yourdomain.com/api/auth/google/callback` |
+   | `YOUTUBE_API_KEY` | same value as local dev, if you set one up |
+
+   Leave `PORT` unset: Render injects its own and the server already
+   reads `process.env.PORT`.
+4. Once it's deployed, **Settings** → **Custom Domains** → add
+   `api.yourdomain.com`, and add the CNAME record it gives you at your
+   domain registrar.
+
+### 4. Web app (Vercel)
+
+1. [vercel.com](https://vercel.com) → sign up → **Add New** → **Project**
+   → import the `cueball` repo.
+2. In the import screen, override:
+   - **Build Command**:
+     `npm run build --workspace=packages/shared && npm run build --workspace=apps/web`
+   - **Output Directory**: `apps/web/.next`
+   - **Install Command**: `npm install` (default; installs the whole
+     workspace, needed so `@cueball/shared` resolves)
+3. Environment variables:
+
+   | Key | Value |
+   |---|---|
+   | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` |
+   | `NEXT_PUBLIC_SOCKET_URL` | `https://api.yourdomain.com` |
+4. Deploy, then **Settings** → **Domains** → add `app.yourdomain.com`
+   and add the DNS record it gives you at your registrar (usually a
+   CNAME to `cname.vercel-dns.com`, or an A record if it's the apex
+   domain).
+
+### 5. Update Google Cloud Console
+
+The same OAuth client used locally needs the production callback URLs
+added too (keep the localhost ones; both sets can coexist):
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → APIs
+   & Services → Credentials → open the existing OAuth client →
+   **Authorized redirect URIs** → add:
+   - `https://api.yourdomain.com/api/youtube/callback`
+   - `https://api.yourdomain.com/api/auth/google/callback`
+2. If the OAuth consent screen is still in **Testing** status, only the
+   Google accounts listed under **Test users** can sign in; add
+   whichever friends' accounts need YouTube/Google sign-in, or publish
+   the app if you want it open to any Google account (no review needed
+   for the non-sensitive scopes this app uses; the sensitive
+   `.../auth/youtube` scope does need review to leave Testing, so
+   staying in Testing plus an explicit test-user list is the practical
+   choice for a friends-only deployment).
+
+### 6. DNS
+
+At your domain registrar, add:
+
+- `app` → CNAME → the target Vercel shows in its domain settings
+- `api` → CNAME → the target Render shows in its custom domain settings
+
+DNS propagation is usually minutes, occasionally up to a few hours.
