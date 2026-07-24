@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { CircleDot } from "lucide-react"
 import { ROOM_CODE_LENGTH } from "@cueball/shared"
 import { CreateRoomForm } from "../components/CreateRoomForm"
 import { Card } from "../components/ui/card"
@@ -23,7 +24,12 @@ export default function HomePage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-12 sm:py-16">
       <div className="mb-10 text-center">
-        <h1 className="text-4xl font-bold tracking-tight">🎱 CueBall</h1>
+        <div className="flex items-center justify-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary-hover shadow-sm">
+            <CircleDot className="size-5 text-primary-foreground" strokeWidth={2.25} />
+          </span>
+          <h1 className="text-4xl font-bold tracking-tight">CueBall</h1>
+        </div>
         <p className="mx-auto mt-2 max-w-[40ch] text-muted">
           Queue up YouTube videos with friends and vote on what plays next.
         </p>
