@@ -47,10 +47,45 @@ import { touchRoomActivity } from "./roomService.js"
 import {
   addQueueItem,
   castVote,
+  isVideoAlreadyQueued,
   removeQueueItem,
   reorderQueue,
   setQueueItemPlayed,
 } from "./queueService.js"
+
+describe("isVideoAlreadyQueued", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.findFirst).mockReset()
+  })
+
+  it("returns true when the video is already unplayed in the queue", async () => {
+    vi.mocked(prisma.queueItem.findFirst).mockResolvedValue({ id: "item-1" } as never)
+
+    const result = await isVideoAlreadyQueued({
+      roomId: "room-1",
+      youtubeVideoId: "abc123",
+    })
+
+    expect(prisma.queueItem.findFirst).toHaveBeenCalledWith({
+      where: { roomId: "room-1", youtubeVideoId: "abc123", playedAt: null },
+      select: { id: true },
+    })
+    expect(result).toBe(true)
+  })
+
+  it("returns false when there's no unplayed match (not queued, or the only match was already played)", async () => {
+    // The playedAt: null filter means Prisma itself excludes played rows, so
+    // this same "not found" result covers both cases.
+    vi.mocked(prisma.queueItem.findFirst).mockResolvedValue(null)
+
+    const result = await isVideoAlreadyQueued({
+      roomId: "room-1",
+      youtubeVideoId: "abc123",
+    })
+
+    expect(result).toBe(false)
+  })
+})
 
 describe("addQueueItem", () => {
   beforeEach(() => {

@@ -7,6 +7,25 @@ import { touchRoomActivity } from "./roomService.js"
 
 export type QueueItemWithVotes = PrismaQueueItem & { votes: PrismaVote[] }
 
+/**
+ * A video already sitting unplayed in the queue can't be added again; once
+ * it's been played, re-adding it is just queuing it up for another watch.
+ */
+export async function isVideoAlreadyQueued(params: {
+  roomId: string
+  youtubeVideoId: string
+}): Promise<boolean> {
+  const existing = await prisma.queueItem.findFirst({
+    where: {
+      roomId: params.roomId,
+      youtubeVideoId: params.youtubeVideoId,
+      playedAt: null,
+    },
+    select: { id: true },
+  })
+  return existing !== null
+}
+
 export async function addQueueItem(params: {
   roomId: string
   addedByParticipantId: string

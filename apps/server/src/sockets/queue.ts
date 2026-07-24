@@ -13,6 +13,7 @@ import {
 import {
   addQueueItem,
   castVote,
+  isVideoAlreadyQueued,
   removeQueueItem,
   reorderQueue,
   setQueueItemPlayed,
@@ -58,6 +59,11 @@ export function registerQueueHandlers(io: Server): void {
         const videoId = parseYoutubeVideoId(payload.youtubeUrl ?? "")
         if (!videoId) {
           ack?.({ error: "That doesn't look like a YouTube link" })
+          return
+        }
+
+        if (await isVideoAlreadyQueued({ roomId, youtubeVideoId: videoId })) {
+          ack?.({ error: "That video is already in the queue" })
           return
         }
 
