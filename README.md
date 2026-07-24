@@ -258,12 +258,19 @@ Pick a subdomain split before starting, e.g.:
 
 1. [vercel.com](https://vercel.com) → sign up → **Add New** → **Project**
    → import the `cueball` repo.
-2. In the import screen, override:
-   - **Build Command**:
-     `npm run build --workspace=packages/shared && npm run build --workspace=apps/web`
-   - **Output Directory**: `apps/web/.next`
-   - **Install Command**: `npm install` (default; installs the whole
-     workspace, needed so `@cueball/shared` resolves)
+2. In the import screen:
+   - **Root Directory**: `apps/web` (click Edit to set it). The
+     Framework Preset should auto-switch to **Next.js** once this is
+     set.
+   - Expand **Build and Output Settings** and override the **Build
+     Command**:
+     `cd ../.. && npm install --include=dev && npm run build --workspace=packages/shared && cd apps/web && npm run build`
+     (the `cd ../..` builds `@cueball/shared` first, from the monorepo
+     root; `--include=dev` is required because Vercel's build shell
+     sets `NODE_ENV=production`, which otherwise makes a plain
+     `npm install` silently skip devDependencies like `typescript`).
+   - Leave **Output Directory** untouched; the Next.js preset manages
+     it automatically once Root Directory is set correctly.
 3. Environment variables:
 
    | Key | Value |
