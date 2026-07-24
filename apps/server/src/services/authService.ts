@@ -42,3 +42,18 @@ export async function loginUser(params: {
 export async function getUserById(userId: string): Promise<User | null> {
   return prisma.user.findUnique({ where: { id: userId } })
 }
+
+/** Signs in an existing account by email, or creates a passwordless one for a first-time Google login. */
+export async function findOrCreateGoogleUser(params: {
+  email: string
+  displayName: string
+}): Promise<User> {
+  const existing = await prisma.user.findUnique({
+    where: { email: params.email },
+  })
+  if (existing) return existing
+
+  return prisma.user.create({
+    data: { email: params.email, displayName: params.displayName },
+  })
+}

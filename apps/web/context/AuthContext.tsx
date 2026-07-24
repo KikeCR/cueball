@@ -22,6 +22,8 @@ interface AuthContextValue {
   loading: boolean
   register: (email: string, password: string, displayName: string) => Promise<void>
   login: (email: string, password: string) => Promise<void>
+  /** Adopts a token issued out-of-band, e.g. redirected back from Google sign-in. */
+  applyToken: (token: string) => Promise<void>
   logout: () => void
 }
 
@@ -46,6 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => clearUserToken())
       .finally(() => setLoading(false))
+  }, [])
+
+  const applyToken = useCallback(async (newToken: string) => {
+    const data = await api.get<{ user: AuthUser }>("/api/auth/me", newToken)
+    storeUserToken(newToken)
+    setToken(newToken)
+    setUser(data.user)
   }, [])
 
   const register = useCallback(
@@ -79,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, register, login, logout }}>
+    <AuthContext.Provider
+      value={{ user, token, loading, register, login, applyToken, logout }}
+    >
       {children}
     </AuthContext.Provider>
   )

@@ -18,7 +18,13 @@ vi.mock("bcrypt", () => ({
 
 import bcrypt from "bcrypt"
 import { prisma } from "./prisma.js"
-import { AuthError, getUserById, loginUser, registerUser } from "./authService.js"
+import {
+  AuthError,
+  findOrCreateGoogleUser,
+  getUserById,
+  loginUser,
+  registerUser,
+} from "./authService.js"
 
 const EXISTING_USER = {
   id: "user-1",
@@ -108,5 +114,33 @@ describe("getUserById", () => {
   it("returns null when the user doesn't exist", async () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
     expect(await getUserById("missing")).toBeNull()
+  })
+})
+
+describe("findOrCreateGoogleUser", () => {
+  it("returns the existing account when the email already has one", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(EXISTING_USER as never)
+
+    const user = await findOrCreateGoogleUser({
+      email: "sam@example.com",
+      displayName: "Sam From Google",
+    })
+
+    expect(user).toEqual(EXISTING_USER)
+    expect(prisma.user.create).not.toHaveBeenCalled()
+  })
+
+  it("creates a passwordless account on first Google sign-in", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+    vi.mocked(prisma.user.create).mockResolvedValue(EXISTING_USER as never)
+
+    await findOrCreateGoogleUser({
+      email: "new@example.com",
+      displayName: "New Person",
+    })
+
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: { email: "new@example.com", displayName: "New Person" },
+    })
   })
 })

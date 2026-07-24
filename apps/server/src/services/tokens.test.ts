@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken"
 import { describe, expect, it } from "vitest"
 import {
+  signGoogleAuthState,
   signParticipantToken,
   signUserToken,
   signYoutubeOAuthState,
+  verifyGoogleAuthState,
   verifyParticipantToken,
   verifyUserToken,
   verifyYoutubeOAuthState,
@@ -49,6 +51,21 @@ describe("user token", () => {
   it("rejects a token of the wrong type (e.g. a participant token)", () => {
     const participantToken = signParticipantToken("participant-1", "room-1")
     expect(verifyUserToken(participantToken)).toBeNull()
+  })
+})
+
+describe("Google auth state token", () => {
+  it("accepts a freshly signed state", () => {
+    expect(verifyGoogleAuthState(signGoogleAuthState())).toBe(true)
+  })
+
+  it("rejects garbage input", () => {
+    expect(verifyGoogleAuthState("not-a-jwt")).toBe(false)
+  })
+
+  it("rejects a token of the wrong type (e.g. a participant token)", () => {
+    const participantToken = signParticipantToken("participant-1", "room-1")
+    expect(verifyGoogleAuthState(participantToken)).toBe(false)
   })
 })
 

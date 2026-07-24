@@ -9,12 +9,30 @@ import {
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
 import { requireAuth } from "../middleware/auth.js"
-import { AuthError, getUserById, loginUser, registerUser } from "../services/authService.js"
+import {
+  AuthError,
+  findOrCreateGoogleUser,
+  getUserById,
+  loginUser,
+  registerUser,
+} from "../services/authService.js"
+import {
+  GoogleAuthError,
+  getGoogleAuthConsentUrl,
+  isGoogleAuthConfigured,
+  verifyGoogleIdentity,
+} from "../services/googleAuth.js"
 import { getUserRoomHistory } from "../services/roomService.js"
 import { serializeUser } from "../services/serializers.js"
-import { signUserToken } from "../services/tokens.js"
+import {
+  signGoogleAuthState,
+  signUserToken,
+  verifyGoogleAuthState,
+} from "../services/tokens.js"
 
 export const authRouter = Router()
+
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000"
 
 // RFC 5321's practical max length for an email address.
 const MAX_EMAIL_LENGTH = 254
@@ -122,5 +140,43 @@ authRouter.get(
       })),
     }
     res.json(response)
+  }),
+)
+
+authRouter.get(
+  "/auth/google/start",
+  asyncHandler(async (_req, res) => {
+    if (!isGoogleAuthConfigured()) {
+      res.redirect(`${CLIENT_ORIGIN}/account?error=google_not_configured`)
+      return
+    }
+    res.redirect(getGoogleAuthConsentUrl(signGoogleAuthState()))
+  }),
+)
+
+authRouter.get(
+  "/auth/google/callback",
+  asyncHandler(async (req, res) => {
+    const code = typeof req.query.code === "string" ? req.query.code : undefined
+    const state =
+      typeof req.query.state === "string" ? req.query.state : undefined
+
+    if (!code || !state || !verifyGoogleAuthState(state)) {
+      res.redirect(`${CLIENT_ORIGIN}/account?error=google_invalid_response`)
+      return
+    }
+
+    try {
+      const identity = await verifyGoogleIdentity(code)
+      const user = await findOrCreateGoogleUser(identity)
+      const token = signUserToken(user.id)
+      res.redirect(`${CLIENT_ORIGIN}/account?token=${token}`)
+    } catch (err) {
+      if (err instanceof GoogleAuthError) {
+        res.redirect(`${CLIENT_ORIGIN}/account?error=google_auth_failed`)
+        return
+      }
+      throw err
+    }
   }),
 )
