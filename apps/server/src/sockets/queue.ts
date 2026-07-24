@@ -6,12 +6,16 @@ import {
   type ActionOk,
   type QueueAddPayload,
   type QueueRemovePayload,
+  type QueueReorderPayload,
+  type QueueSetPlayedPayload,
   type QueueVotePayload,
 } from "@cueball/shared"
 import {
   addQueueItem,
   castVote,
   removeQueueItem,
+  reorderQueue,
+  setQueueItemPlayed,
 } from "../services/queueService.js"
 import {
   fetchVideoDurationSeconds,
@@ -115,14 +119,30 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
-          await castVote({
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const result = await castVote({
             queueItemId: payload.queueItemId,
             participantId,
+            isHost: participant.isHost,
             value: payload.value,
           })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
+          // Votes drive order by default (and a host vote can hand order
+          // back to the votes out of manual drag-order mode), so the real
+          // playlist may need to catch up either way.
           schedulePlaylistSync(roomId)
         })()
       },
@@ -175,6 +195,105 @@ export function registerQueueHandlers(io: Server): void {
                 )
               }
             }
+          }
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.QueueReorder,
+      (payload: QueueReorderPayload, ack?: Ack) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room before reordering the queue" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const result = await reorderQueue({
+            roomId,
+            isHost: participant.isHost,
+            orderedQueueItemIds: payload.orderedQueueItemIds ?? [],
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+          schedulePlaylistSync(roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.QueueSetPlayed,
+      (payload: QueueSetPlayedPayload, ack?: Ack) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room before marking videos played" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const result = await setQueueItemPlayed({
+            queueItemId: payload.queueItemId,
+            roomId,
+            participantId,
+            isHost: participant.isHost,
+            played: payload.played,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+
+          // Keep the real playlist in sync: a played video is pulled off it
+          // so driving the TV straight from YouTube can't replay it;
+          // unmarking re-adds it (appended, not restored to its old spot).
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          if (!room?.youtubePlaylistId) return
+
+          try {
+            if (payload.played && result.item.youtubePlaylistItemId) {
+              await removeVideoFromPlaylist(
+                room,
+                result.item.youtubePlaylistItemId,
+              )
+              await prisma.queueItem.update({
+                where: { id: result.item.id },
+                data: { youtubePlaylistItemId: null },
+              })
+              await broadcastRoomState(io, roomId)
+            } else if (!payload.played && !result.item.youtubePlaylistItemId) {
+              await addVideoToPlaylist(room, result.item)
+              await broadcastRoomState(io, roomId)
+            }
+          } catch (err) {
+            console.error(
+              `Failed to sync played-state to YouTube playlist for room ${roomId}`,
+              err,
+            )
           }
         })()
       },

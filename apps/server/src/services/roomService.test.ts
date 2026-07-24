@@ -27,10 +27,76 @@ import { prisma } from "./prisma.js"
 import {
   addParticipant,
   getUserRoomHistory,
+  orderQueueForRoom,
   removeParticipant,
+  renameParticipant,
+  sortQueueItems,
   sweepExpiredRooms,
   touchRoomActivity,
 } from "./roomService.js"
+
+describe("sortQueueItems", () => {
+  const items = [
+    { id: "a", score: 1, position: 2, createdAt: new Date("2026-01-01") },
+    { id: "b", score: 5, position: 0, createdAt: new Date("2026-01-02") },
+    { id: "c", score: 5, position: 1, createdAt: new Date("2026-01-01") },
+  ]
+
+  it("sorts by score desc, then createdAt asc as a tiebreaker, when not in manual order", () => {
+    const result = sortQueueItems(items, false)
+    expect(result.map((i) => i.id)).toEqual(["c", "b", "a"])
+  })
+
+  it("sorts by explicit position when in manual order", () => {
+    const result = sortQueueItems(items, true)
+    expect(result.map((i) => i.id)).toEqual(["b", "c", "a"])
+  })
+
+  it("doesn't mutate the input array", () => {
+    const original = [...items]
+    sortQueueItems(items, true)
+    expect(items).toEqual(original)
+  })
+})
+
+describe("orderQueueForRoom", () => {
+  it("puts unplayed items first, sorted by the room's order mode", () => {
+    const items = [
+      { id: "a", score: 1, position: 0, createdAt: new Date("2026-01-01"), playedAt: null },
+      { id: "b", score: 5, position: 1, createdAt: new Date("2026-01-01"), playedAt: null },
+    ]
+    const result = orderQueueForRoom(items, false)
+    expect(result.map((i) => i.id)).toEqual(["b", "a"])
+  })
+
+  it("puts played items after unplayed ones, most-recently-played first", () => {
+    const items = [
+      {
+        id: "old-play",
+        score: 0,
+        position: 0,
+        createdAt: new Date("2026-01-01"),
+        playedAt: new Date("2026-01-01"),
+      },
+      {
+        id: "upcoming",
+        score: 0,
+        position: 1,
+        createdAt: new Date("2026-01-01"),
+        playedAt: null,
+      },
+      {
+        id: "recent-play",
+        score: 0,
+        position: 2,
+        createdAt: new Date("2026-01-01"),
+        playedAt: new Date("2026-01-03"),
+      },
+    ]
+    const result = orderQueueForRoom(items, false)
+    expect(result.map((i) => i.id)).toEqual(["upcoming", "recent-play", "old-play"])
+  })
+})
 
 describe("touchRoomActivity", () => {
   it("bumps lastActiveAt to now", async () => {
@@ -221,6 +287,35 @@ describe("addParticipant", () => {
       userId: "user-1",
       guestName: "Luis B",
     })
+  })
+})
+
+describe("renameParticipant", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.participant.update).mockReset()
+    vi.mocked(prisma.room.update).mockReset().mockResolvedValue({} as never)
+  })
+
+  it("updates the participant's guestName and touches room activity", async () => {
+    vi.mocked(prisma.participant.update).mockResolvedValue({
+      id: "p-1",
+      guestName: "New Name",
+    } as never)
+
+    const result = await renameParticipant({
+      participantId: "p-1",
+      roomId: "room-1",
+      name: "New Name",
+    })
+
+    expect(prisma.participant.update).toHaveBeenCalledWith({
+      where: { id: "p-1" },
+      data: { guestName: "New Name" },
+    })
+    expect(prisma.room.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "room-1" } }),
+    )
+    expect(result).toEqual({ id: "p-1", guestName: "New Name" })
   })
 })
 

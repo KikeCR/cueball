@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { screen } from "@testing-library/react"
 import type { ParticipantWithPresence } from "@cueball/shared"
 import { ParticipantListPageObject } from "../../test/page-objects/ParticipantListPageObject"
 
@@ -75,5 +76,53 @@ describe("ParticipantList", () => {
     await list.clickRemove("Riley")
 
     expect(onRemove).toHaveBeenCalledWith("guest-1")
+  })
+
+  it("only shows the edit-name control for yourself", () => {
+    const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "guest-1",
+      onRename: vi.fn(),
+    })
+
+    expect(list.editNameButton).toBeInTheDocument()
+    // Only one edit control should exist (for "you"), not one per participant.
+    expect(screen.getAllByRole("button", { name: "Edit your name" })).toHaveLength(1)
+  })
+
+  it("lets you rename yourself", async () => {
+    const onRename = vi.fn()
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [guest],
+      selfId: "guest-1",
+      onRename,
+    })
+
+    await list.renameTo("New Name")
+
+    expect(onRename).toHaveBeenCalledWith("New Name")
+    // The component doesn't optimistically rename itself — it just reports
+    // the new name and exits edit mode; the display name only changes once
+    // the parent feeds back an updated `participants` prop.
+    expect(list.nameInput).not.toBeInTheDocument()
+  })
+
+  it("discards the edit when cancelled", async () => {
+    const onRename = vi.fn()
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [guest],
+      selfId: "guest-1",
+      onRename,
+    })
+
+    await list.startRenameAndType("Discarded")
+    await list.cancelRename()
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(list.hasName("Riley")).toBe(true)
   })
 })

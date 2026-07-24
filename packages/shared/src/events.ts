@@ -13,10 +13,13 @@ export const SocketEvents = {
 
   ParticipantRemove: "participant:remove",
   ParticipantRemoved: "participant:removed",
+  ParticipantRename: "participant:rename",
 
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
   QueueRemove: "queue:remove",
+  QueueReorder: "queue:reorder",
+  QueueSetPlayed: "queue:set-played",
 } as const
 
 export interface RoomJoinPayload {
@@ -67,6 +70,10 @@ export interface ParticipantRemovedPayload {
   reason: string
 }
 
+export interface ParticipantRenamePayload {
+  name: string
+}
+
 export interface QueueAddPayload {
   youtubeUrl: string
 }
@@ -78,6 +85,16 @@ export interface QueueVotePayload {
 
 export interface QueueRemovePayload {
   queueItemId: string
+}
+
+export interface QueueReorderPayload {
+  /** Every queue item id currently in the room, in the new play order. */
+  orderedQueueItemIds: string[]
+}
+
+export interface QueueSetPlayedPayload {
+  queueItemId: string
+  played: boolean
 }
 
 export interface RegisterRequest {
