@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss"
+import plugin from "tailwindcss/plugin"
 
 const config: Config = {
   darkMode: ["class"],
@@ -31,7 +32,15 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Touch devices simulate `:hover` on tap and often leave it "stuck"
+    // until the next tap elsewhere, making buttons look permanently
+    // highlighted. Gating hover: behind an actual hover-capable pointer
+    // fixes every existing hover: utility app-wide, no component changes.
+    plugin(({ addVariant }) => {
+      addVariant("hover", "@media (hover: hover) { &:hover }")
+    }),
+  ],
 }
 
 export default config

@@ -191,6 +191,19 @@ export async function setQueueItemPlayed(params: {
     }
   }
 
+  // Un-marking moves it back into the active queue, so it's subject to the
+  // same no-duplicates rule as adding a video fresh (a separately re-added
+  // copy could already be sitting there unplayed).
+  if (!params.played) {
+    const duplicate = await isVideoAlreadyQueued({
+      roomId: params.roomId,
+      youtubeVideoId: item.youtubeVideoId,
+    })
+    if (duplicate) {
+      return { error: "That video is already in the queue" }
+    }
+  }
+
   const updated = await prisma.queueItem.update({
     where: { id: item.id },
     data: { playedAt: params.played ? new Date() : null },

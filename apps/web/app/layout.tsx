@@ -4,6 +4,8 @@ import { ThemeProvider } from "../context/ThemeContext"
 import { AuthProvider } from "../context/AuthContext"
 import { ThemeToggle } from "../components/ThemeToggle"
 import { AccountMenu } from "../components/AccountMenu"
+import { Logo } from "../components/Logo"
+import { Footer } from "../components/Footer"
 import "./globals.css"
 
 const inter = Inter({
@@ -30,15 +32,19 @@ const THEME_INIT_SCRIPT = `
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body>
+      <body className="flex min-h-screen flex-col">
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <ThemeProvider>
           <AuthProvider>
-            <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
-              <AccountMenu />
-              <ThemeToggle />
-            </div>
-            <div className="pt-16">{children}</div>
+            <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface/80 px-4 backdrop-blur-sm sm:px-6">
+              <Logo />
+              <div className="flex items-center gap-2">
+                <AccountMenu />
+                <ThemeToggle />
+              </div>
+            </header>
+            <div className="flex-1">{children}</div>
+            <Footer />
           </AuthProvider>
         </ThemeProvider>
       </body>

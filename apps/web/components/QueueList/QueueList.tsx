@@ -295,6 +295,7 @@ function QueueListItem({
       }}
       className={cn(
         "flex items-center gap-3 rounded-md border border-border bg-surface p-2",
+        draggable && "select-none [-webkit-touch-callout:none]",
         isDragging && "relative z-10 shadow-lg",
       )}
     >
@@ -302,11 +303,11 @@ function QueueListItem({
         <button
           type="button"
           aria-label="Drag to reorder"
-          className="shrink-0 touch-none rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-text active:cursor-grabbing"
+          className="shrink-0 touch-none select-none rounded-md p-2 text-muted transition-colors hover:bg-surface-hover hover:text-text active:cursor-grabbing [-webkit-touch-callout:none]"
           {...attributes}
           {...listeners}
         >
-          <GripVertical className="size-4" />
+          <GripVertical className="size-5" />
         </button>
       )}
       {children}

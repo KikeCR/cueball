@@ -522,17 +522,21 @@ describe("setQueueItemPlayed", () => {
     expect("item" in result).toBe(true)
   })
 
-  it("lets the host mark someone else's video unplayed", async () => {
-    vi.mocked(prisma.queueItem.findFirst).mockResolvedValue({
-      id: "item-1",
-      addedByParticipantId: "someone-else",
-    } as never)
+  it("lets the host mark someone else's video unplayed when it's not duplicated elsewhere", async () => {
+    vi.mocked(prisma.queueItem.findFirst)
+      .mockResolvedValueOnce({
+        id: "item-1",
+        addedByParticipantId: "someone-else",
+        youtubeVideoId: "abc123",
+      } as never)
+      // The internal isVideoAlreadyQueued lookup: no unplayed duplicate.
+      .mockResolvedValueOnce(null)
     vi.mocked(prisma.queueItem.update).mockResolvedValue({
       id: "item-1",
       playedAt: null,
     } as never)
 
-    await setQueueItemPlayed({
+    const result = await setQueueItemPlayed({
       queueItemId: "item-1",
       roomId: "room-1",
       participantId: "host-participant",
@@ -545,5 +549,51 @@ describe("setQueueItemPlayed", () => {
       data: { playedAt: null },
       include: { votes: true },
     })
+    expect("item" in result).toBe(true)
+  })
+
+  it("blocks un-marking a played video when it's already been re-added to the queue", async () => {
+    vi.mocked(prisma.queueItem.findFirst)
+      .mockResolvedValueOnce({
+        id: "item-1",
+        addedByParticipantId: "host-participant",
+        youtubeVideoId: "abc123",
+      } as never)
+      // The internal isVideoAlreadyQueued lookup: an unplayed duplicate exists.
+      .mockResolvedValueOnce({ id: "item-2" } as never)
+
+    const result = await setQueueItemPlayed({
+      queueItemId: "item-1",
+      roomId: "room-1",
+      participantId: "host-participant",
+      isHost: true,
+      played: false,
+    })
+
+    expect(result).toEqual({ error: "That video is already in the queue" })
+    expect(prisma.queueItem.update).not.toHaveBeenCalled()
+  })
+
+  it("doesn't run the duplicate check when marking played (only relevant for un-marking)", async () => {
+    vi.mocked(prisma.queueItem.findFirst).mockResolvedValueOnce({
+      id: "item-1",
+      addedByParticipantId: "participant-1",
+      youtubeVideoId: "abc123",
+    } as never)
+    vi.mocked(prisma.queueItem.update).mockResolvedValue({
+      id: "item-1",
+      playedAt: new Date(),
+    } as never)
+
+    await setQueueItemPlayed({
+      queueItemId: "item-1",
+      roomId: "room-1",
+      participantId: "participant-1",
+      isHost: false,
+      played: true,
+    })
+
+    // Only the item lookup itself, no second findFirst for a duplicate check.
+    expect(prisma.queueItem.findFirst).toHaveBeenCalledTimes(1)
   })
 })

@@ -34,6 +34,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
   } = useRoom()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   useEffect(() => {
     api
@@ -43,6 +44,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
         setPreviewError(err instanceof Error ? err.message : "Room not found"),
       )
   }, [roomCode])
+
+  useEffect(() => {
+    if (!actionError) return
+    const timer = window.setTimeout(() => setActionError(null), 5000)
+    return () => window.clearTimeout(timer)
+  }, [actionError])
 
   if (previewError) {
     return (
@@ -82,40 +89,41 @@ function RoomView({ roomCode }: { roomCode: string }) {
     )
   }
 
+  const reportActionError = (fallback: string) => (err: unknown) => {
+    console.error(fallback, err)
+    setActionError(err instanceof Error ? err.message : fallback)
+  }
+
   const handleVote = (queueItemId: string, value: 1 | -1) => {
-    voteOnQueueItem(queueItemId, value).catch((err: unknown) => {
-      console.error("Failed to vote", err)
-    })
+    voteOnQueueItem(queueItemId, value).catch(reportActionError("Failed to vote"))
   }
 
   const handleRemove = (queueItemId: string) => {
-    removeQueueItem(queueItemId).catch((err: unknown) => {
-      console.error("Failed to remove queue item", err)
-    })
+    removeQueueItem(queueItemId).catch(
+      reportActionError("Failed to remove queue item"),
+    )
   }
 
   const handleReorder = (orderedQueueItemIds: string[]) => {
-    reorderQueue(orderedQueueItemIds).catch((err: unknown) => {
-      console.error("Failed to reorder queue", err)
-    })
+    reorderQueue(orderedQueueItemIds).catch(
+      reportActionError("Failed to reorder queue"),
+    )
   }
 
   const handleSetPlayed = (queueItemId: string, played: boolean) => {
-    setQueueItemPlayed(queueItemId, played).catch((err: unknown) => {
-      console.error("Failed to update played state", err)
-    })
+    setQueueItemPlayed(queueItemId, played).catch(
+      reportActionError("Failed to update played state"),
+    )
   }
 
   const handleRemoveParticipant = (participantId: string) => {
-    removeParticipant(participantId).catch((err: unknown) => {
-      console.error("Failed to remove participant", err)
-    })
+    removeParticipant(participantId).catch(
+      reportActionError("Failed to remove participant"),
+    )
   }
 
   const handleRename = (name: string) => {
-    renameSelf(name).catch((err: unknown) => {
-      console.error("Failed to rename", err)
-    })
+    renameSelf(name).catch(reportActionError("Failed to rename"))
   }
 
   return (
@@ -138,6 +146,15 @@ function RoomView({ roomCode }: { roomCode: string }) {
           </p>
         </div>
       </div>
+
+      {actionError && (
+        <p
+          role="alert"
+          className="mb-5 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
+        >
+          {actionError}
+        </p>
+      )}
 
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-3">
