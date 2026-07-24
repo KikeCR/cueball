@@ -61,20 +61,41 @@ export async function getRoomByCode(code: string): Promise<Room | null> {
   return prisma.room.findUnique({ where: { code } })
 }
 
+/**
+ * Joins a room. For an authenticated user, this reuses their existing
+ * participant row for this room (if any) instead of creating a duplicate, so
+ * the same account joining from a second device or tab reconnects as the
+ * same participant rather than showing up as a separate person. Guests
+ * (no userId) always get a fresh row, same as before.
+ */
 export async function addParticipant(params: {
   roomId: string
   guestName: string
   userId?: string
 }): Promise<Participant> {
   return prisma.$transaction(async (tx) => {
-    const participant = await tx.participant.create({
-      data: {
-        roomId: params.roomId,
-        guestName: params.guestName,
-        isHost: false,
-        userId: params.userId,
-      },
-    })
+    const existing = params.userId
+      ? await tx.participant.findUnique({
+          where: {
+            roomId_userId: { roomId: params.roomId, userId: params.userId },
+          },
+        })
+      : null
+
+    const participant = existing
+      ? await tx.participant.update({
+          where: { id: existing.id },
+          data: { guestName: params.guestName },
+        })
+      : await tx.participant.create({
+          data: {
+            roomId: params.roomId,
+            guestName: params.guestName,
+            isHost: false,
+            userId: params.userId,
+          },
+        })
+
     await tx.room.update({
       where: { id: params.roomId },
       data: { lastActiveAt: new Date() },

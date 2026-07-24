@@ -58,6 +58,11 @@ model Participant {
   addedQueueItems QueueItem[] @relation("QueueItemAddedBy")
   votes           Vote[]
 
+  // Lets an authenticated user's participant identity be looked up and
+  // reused across devices/reconnects instead of spawning a duplicate row.
+  // Multiple NULLs (guests) are unaffected: Postgres unique indexes don't
+  // consider NULL values equal to each other.
+  @@unique([roomId, userId])
   @@map("participants")
 }
 

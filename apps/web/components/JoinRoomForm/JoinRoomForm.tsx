@@ -1,17 +1,23 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Loader2 } from "lucide-react"
 import { MAX_NAME_LENGTH } from "@cueball/shared"
 import { useRoom } from "../../context/RoomContext"
+import { useAuth } from "../../context/AuthContext"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 
 export function JoinRoomForm() {
   const { joinAsGuest, joinError } = useRoom()
+  const { user } = useAuth()
   const [guestName, setGuestName] = useState("")
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (user) setGuestName((current) => current || user.displayName)
+  }, [user])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
