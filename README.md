@@ -17,9 +17,13 @@ architecture (React + Node.js), with a guest-first, two-tier auth model.
 
 - A host creates a room and gets a shareable join code/link.
 - Guests join with just a nickname, no account required.
-- Anyone in the room can paste a YouTube URL to add it to the queue.
-  Participants upvote/downvote queued items; the queue reorders live by
-  score, broadcast to everyone in the room over Socket.io.
+- Anyone in the room can paste a YouTube URL to add it to the queue,
+  as long as it's 12 minutes or shorter. Participants upvote/downvote
+  queued items; the queue reorders live by score, broadcast to everyone
+  in the room over Socket.io.
+- The host can remove a participant (e.g. a duplicate from someone
+  rejoining on another device), which disconnects them from the room
+  immediately.
 - The host can optionally connect their YouTube account (OAuth). CueBall
   then creates a real, unlisted YouTube playlist for the room and keeps it
   in sync as the queue changes, so the actual video can just play from the
@@ -47,8 +51,9 @@ your phone, play from the TV's own YouTube app).
 - **Web**: React via Next.js (App Router), Tailwind CSS + a small
   hand-integrated shadcn-style UI kit, `lucide-react` icons
 - **Video**: YouTube only. Pasted links are resolved via the oEmbed
-  endpoint for the in-app queue, optionally synced to a real playlist via
-  the YouTube Data API v3 (OAuth)
+  endpoint for the in-app queue, checked against a 12-minute length cap
+  via the YouTube Data API v3 (API key, optional), and optionally synced
+  to a real playlist via the same Data API (OAuth)
 - **Auth**: guests join with a nickname only (JWT-based participant
   session token for reconnect); optional real accounts (email/password
   bcrypt-hashed, or Google sign-in, both issuing the same JWT session
@@ -150,6 +155,24 @@ Setup:
 
 Either feature can be left unconfigured independently: they only share
 the client credentials, not a config flag.
+
+### Video length check (optional)
+
+Adding a video over 12 minutes is rejected with an error, but this needs
+a video's duration, which the oEmbed endpoint used for title/thumbnail
+doesn't return. It's looked up via the YouTube Data API v3 instead, using
+a plain API key (not the OAuth client above):
+
+1. Same Google Cloud project → APIs & Services → Credentials → Create
+   Credentials → **API key**. Optionally restrict it to YouTube Data API
+   v3 (already enabled in the OAuth setup above).
+2. Copy it into `apps/server/.env`:
+   ```
+   YOUTUBE_API_KEY=...
+   ```
+
+Left unset, the length check is skipped entirely and videos of any
+length are allowed through, rather than blocking adds altogether.
 
 ## Data model
 

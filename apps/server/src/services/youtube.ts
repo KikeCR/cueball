@@ -58,3 +58,51 @@ export async function fetchVideoMetadata(
   const body = (await res.json()) as OEmbedResponse
   return { title: body.title, thumbnailUrl: body.thumbnail_url }
 }
+
+const ISO8601_DURATION_PATTERN = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/
+
+/** Parses a YouTube contentDetails duration (e.g. "PT1H2M3S") into seconds. */
+export function parseIso8601DurationSeconds(duration: string): number | null {
+  const match = duration.match(ISO8601_DURATION_PATTERN)
+  if (!match) return null
+
+  const hours = Number(match[1] ?? 0)
+  const minutes = Number(match[2] ?? 0)
+  const seconds = Number(match[3] ?? 0)
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+export function isYoutubeDataApiConfigured(): boolean {
+  return Boolean(process.env.YOUTUBE_API_KEY)
+}
+
+interface VideosListResponse {
+  items: Array<{ contentDetails: { duration: string } }>
+}
+
+/**
+ * Video length in seconds, via the YouTube Data API (not oEmbed, which
+ * doesn't expose duration). Returns null if unconfigured or unavailable,
+ * so callers can fail open rather than block adding videos entirely.
+ */
+export async function fetchVideoDurationSeconds(
+  videoId: string,
+): Promise<number | null> {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) return null
+
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(videoId)}&key=${apiKey}`
+  const res = await fetch(url)
+  if (!res.ok) return null
+
+  const body = (await res.json()) as VideosListResponse
+  const duration = body.items[0]?.contentDetails.duration
+  return duration ? parseIso8601DurationSeconds(duration) : null
+}
+
+/** Formats a duration in seconds as "m:ss", for use in user-facing messages. */
+export function formatDurationClock(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, "0")}`
+}

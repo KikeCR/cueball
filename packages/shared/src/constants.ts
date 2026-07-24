@@ -6,3 +6,5 @@ export const MAX_ROOM_NAME_LENGTH = 80
 export const MIN_PASSWORD_LENGTH = 8
 
 export const ROOM_CODE_LENGTH = 6
+
+export const MAX_VIDEO_DURATION_SECONDS = 12 * 60

@@ -11,6 +11,9 @@ export const SocketEvents = {
   RoomLeave: "room:leave",
   RoomState: "room:state",
 
+  ParticipantRemove: "participant:remove",
+  ParticipantRemoved: "participant:removed",
+
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
   QueueRemove: "queue:remove",
@@ -54,6 +57,14 @@ export interface CreateRoomResponse {
   participant: ParticipantWithPresence
   /** Persisted client-side and sent as the socket auth token on reconnect. */
   participantToken: string
+}
+
+export interface ParticipantRemovePayload {
+  participantId: string
+}
+
+export interface ParticipantRemovedPayload {
+  reason: string
 }
 
 export interface QueueAddPayload {
