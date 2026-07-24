@@ -77,3 +77,22 @@ export function verifyYoutubeOAuthState(
     return null
   }
 }
+
+interface GoogleAuthStatePayload {
+  type: "google-auth-state"
+}
+
+/** Proves the OAuth callback corresponds to a /google/start redirect we issued. */
+export function signGoogleAuthState(): string {
+  const payload: GoogleAuthStatePayload = { type: "google-auth-state" }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "10m" })
+}
+
+export function verifyGoogleAuthState(state: string): boolean {
+  try {
+    const decoded = jwt.verify(state, JWT_SECRET) as GoogleAuthStatePayload
+    return decoded.type === "google-auth-state"
+  } catch {
+    return false
+  }
+}

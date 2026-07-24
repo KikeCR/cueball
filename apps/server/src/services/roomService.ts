@@ -83,6 +83,38 @@ export async function addParticipant(params: {
   })
 }
 
+export type RemoveParticipantResult =
+  | { removed: Participant }
+  | { error: string }
+
+/** Only the host may remove another participant from their room; the host can't remove themselves. */
+export async function removeParticipant(params: {
+  roomId: string
+  requesterId: string
+  targetId: string
+}): Promise<RemoveParticipantResult> {
+  const requester = await prisma.participant.findUnique({
+    where: { id: params.requesterId },
+  })
+  if (!requester || requester.roomId !== params.roomId || !requester.isHost) {
+    return { error: "Only the host can remove participants" }
+  }
+  if (params.targetId === params.requesterId) {
+    return { error: "You can't remove yourself" }
+  }
+
+  const target = await prisma.participant.findFirst({
+    where: { id: params.targetId, roomId: params.roomId },
+  })
+  if (!target) {
+    return { error: "Participant not found in this room" }
+  }
+
+  await prisma.participant.delete({ where: { id: target.id } })
+  await touchRoomActivity(params.roomId)
+  return { removed: target }
+}
+
 /** Marks a room as recently used, so the expiry sweep leaves it alone. */
 export async function touchRoomActivity(roomId: string): Promise<void> {
   await prisma.room.update({

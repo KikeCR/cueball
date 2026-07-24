@@ -7,6 +7,11 @@ vi.mock("./prisma.js", () => ({
       delete: vi.fn(),
       update: vi.fn(),
     },
+    participant: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      delete: vi.fn(),
+    },
   },
 }))
 
@@ -18,6 +23,7 @@ import { getConnectedParticipantIds } from "../redis/presence.js"
 import { prisma } from "./prisma.js"
 import {
   getUserRoomHistory,
+  removeParticipant,
   sweepExpiredRooms,
   touchRoomActivity,
 } from "./roomService.js"
@@ -134,5 +140,104 @@ describe("getUserRoomHistory", () => {
       { id: "room-1", code: "AAA111", name: "Hosted room", isHost: true, lastActiveAt },
       { id: "room-2", code: "BBB222", name: "Joined room", isHost: false, lastActiveAt },
     ])
+  })
+})
+
+describe("removeParticipant", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.participant.findUnique).mockReset()
+    vi.mocked(prisma.participant.findFirst).mockReset()
+    vi.mocked(prisma.participant.delete).mockReset()
+    vi.mocked(prisma.room.update).mockReset()
+  })
+
+  it("rejects a requester who isn't the host", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "requester-1",
+      roomId: "room-1",
+      isHost: false,
+    } as never)
+
+    const result = await removeParticipant({
+      roomId: "room-1",
+      requesterId: "requester-1",
+      targetId: "target-1",
+    })
+
+    expect(result).toEqual({ error: "Only the host can remove participants" })
+    expect(prisma.participant.delete).not.toHaveBeenCalled()
+  })
+
+  it("rejects a requester from a different room, even if they're a host there", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "requester-1",
+      roomId: "other-room",
+      isHost: true,
+    } as never)
+
+    const result = await removeParticipant({
+      roomId: "room-1",
+      requesterId: "requester-1",
+      targetId: "target-1",
+    })
+
+    expect(result).toEqual({ error: "Only the host can remove participants" })
+  })
+
+  it("rejects the host trying to remove themselves", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+
+    const result = await removeParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "host-1",
+    })
+
+    expect(result).toEqual({ error: "You can't remove yourself" })
+    expect(prisma.participant.delete).not.toHaveBeenCalled()
+  })
+
+  it("rejects removing a participant who isn't in this room", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+    vi.mocked(prisma.participant.findFirst).mockResolvedValue(null)
+
+    const result = await removeParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "missing",
+    })
+
+    expect(result).toEqual({ error: "Participant not found in this room" })
+  })
+
+  it("lets the host remove another participant", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+    const target = { id: "target-1", roomId: "room-1", isHost: false }
+    vi.mocked(prisma.participant.findFirst).mockResolvedValue(target as never)
+    vi.mocked(prisma.participant.delete).mockResolvedValue(target as never)
+    vi.mocked(prisma.room.update).mockResolvedValue({} as never)
+
+    const result = await removeParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "target-1",
+    })
+
+    expect(prisma.participant.delete).toHaveBeenCalledWith({
+      where: { id: "target-1" },
+    })
+    expect(result).toEqual({ removed: target })
   })
 })

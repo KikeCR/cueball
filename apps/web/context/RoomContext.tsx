@@ -14,6 +14,7 @@ import {
   SocketEvents,
   type ActionError,
   type ActionOk,
+  type ParticipantRemovedPayload,
   type ParticipantWithPresence,
   type QueueItem,
   type Room,
@@ -59,10 +60,13 @@ interface RoomContextValue {
   queue: QueueItem[]
   self: ParticipantWithPresence | null
   joinError: string | null
+  /** Set when the host removes this participant; cleared on the next successful join. */
+  removedReason: string | null
   joinAsGuest: (guestName: string) => Promise<void>
   addToQueue: (youtubeUrl: string) => Promise<void>
   voteOnQueueItem: (queueItemId: string, value: 1 | -1) => Promise<void>
   removeQueueItem: (queueItemId: string) => Promise<void>
+  removeParticipant: (participantId: string) => Promise<void>
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -84,6 +88,7 @@ export function RoomProvider({
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [selfId, setSelfId] = useState<string | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
+  const [removedReason, setRemovedReason] = useState<string | null>(null)
 
   useEffect(() => {
     const token = getStoredParticipantToken(roomCode)
@@ -110,6 +115,14 @@ export function RoomProvider({
       setParticipants(state.participants)
       setQueue(state.queue)
     })
+    socket.on(
+      SocketEvents.ParticipantRemoved,
+      (payload: ParticipantRemovedPayload) => {
+        clearParticipantToken(roomCode)
+        setSelfId(null)
+        setRemovedReason(payload.reason)
+      },
+    )
 
     const staleTimer = token
       ? window.setTimeout(() => {
@@ -151,6 +164,7 @@ export function RoomProvider({
             setQueue(result.queue)
             setSelfId(result.participant.id)
             setJoinError(null)
+            setRemovedReason(null)
             resolve()
           },
         )
@@ -179,6 +193,14 @@ export function RoomProvider({
     [],
   )
 
+  const removeParticipant = useCallback(
+    (participantId: string) =>
+      emitAction(socketRef.current, SocketEvents.ParticipantRemove, {
+        participantId,
+      }),
+    [],
+  )
+
   const self = participants.find((p) => p.id === selfId) ?? null
 
   return (
@@ -191,10 +213,12 @@ export function RoomProvider({
         queue,
         self,
         joinError,
+        removedReason,
         joinAsGuest,
         addToQueue,
         voteOnQueueItem,
         removeQueueItem,
+        removeParticipant,
       }}
     >
       {children}

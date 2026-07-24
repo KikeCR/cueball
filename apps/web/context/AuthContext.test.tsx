@@ -62,6 +62,34 @@ describe("AuthContext", () => {
     expect(localStorage.getItem("cueball:auth")).toBe("new-token")
   })
 
+  it("adopts a token issued out-of-band (e.g. the Google sign-in redirect)", async () => {
+    vi.mocked(api.get).mockResolvedValue({ user: USER })
+
+    const auth = new AuthContextPageObject()
+    await waitFor(() => expect(auth.loadingText).toBe("false"))
+
+    await auth.applyToken()
+
+    await waitFor(() => expect(auth.userText).toBe("Sam"))
+    expect(api.get).toHaveBeenCalledWith("/api/auth/me", "google-token")
+    expect(localStorage.getItem("cueball:auth")).toBe("google-token")
+  })
+
+  it("surfaces an error and leaves the session logged out if the token is invalid", async () => {
+    vi.mocked(api.get).mockRejectedValue(new Error("Authentication required"))
+
+    const auth = new AuthContextPageObject()
+    await waitFor(() => expect(auth.loadingText).toBe("false"))
+
+    await auth.applyToken()
+
+    await waitFor(() =>
+      expect(auth.applyTokenErrorText).toBe("Authentication required"),
+    )
+    expect(auth.userText).toBe("none")
+    expect(localStorage.getItem("cueball:auth")).toBeNull()
+  })
+
   it("logs out and clears the stored token", async () => {
     vi.mocked(api.post).mockResolvedValue({ user: USER, token: "new-token" })
 

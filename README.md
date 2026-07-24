@@ -17,9 +17,13 @@ architecture (React + Node.js), with a guest-first, two-tier auth model.
 
 - A host creates a room and gets a shareable join code/link.
 - Guests join with just a nickname, no account required.
-- Anyone in the room can paste a YouTube URL to add it to the queue.
-  Participants upvote/downvote queued items; the queue reorders live by
-  score, broadcast to everyone in the room over Socket.io.
+- Anyone in the room can paste a YouTube URL to add it to the queue,
+  as long as it's 12 minutes or shorter. Participants upvote/downvote
+  queued items; the queue reorders live by score, broadcast to everyone
+  in the room over Socket.io.
+- The host can remove a participant (e.g. a duplicate from someone
+  rejoining on another device), which disconnects them from the room
+  immediately.
 - The host can optionally connect their YouTube account (OAuth). CueBall
   then creates a real, unlisted YouTube playlist for the room and keeps it
   in sync as the queue changes, so the actual video can just play from the
@@ -27,9 +31,9 @@ architecture (React + Node.js), with a guest-first, two-tier auth model.
   for anyone to open it directly.
 - Presence (who's connected right now) is tracked in Redis so reconnecting
   is instant and doesn't lose your spot in the room.
-- Signing up (email/password) is optional. It links your name to rooms
-  you create or join, so you get a "your rooms" history to jump back
-  into, but it's never required to use the app.
+- Signing up (email/password, or "Continue with Google") is optional. It
+  links your name to rooms you create or join, so you get a "your rooms"
+  history to jump back into, but it's never required to use the app.
 
 Earlier drafts of this project explored two other approaches for the
 "plays on the TV" part: embedding a YouTube IFrame Player synced across
@@ -47,11 +51,13 @@ your phone, play from the TV's own YouTube app).
 - **Web**: React via Next.js (App Router), Tailwind CSS + a small
   hand-integrated shadcn-style UI kit, `lucide-react` icons
 - **Video**: YouTube only. Pasted links are resolved via the oEmbed
-  endpoint for the in-app queue, optionally synced to a real playlist via
-  the YouTube Data API v3 (OAuth)
+  endpoint for the in-app queue, checked against a 12-minute length cap
+  via the YouTube Data API v3 (API key, optional), and optionally synced
+  to a real playlist via the same Data API (OAuth)
 - **Auth**: guests join with a nickname only (JWT-based participant
-  session token for reconnect); optional real accounts (email/password,
-  bcrypt-hashed, JWT session token) link a participant to a room history
+  session token for reconnect); optional real accounts (email/password
+  bcrypt-hashed, or Google sign-in, both issuing the same JWT session
+  token) link a participant to a room history
 - **Local dev**: Docker Compose (Postgres, Redis, server, web)
 
 ## Project structure
@@ -112,32 +118,67 @@ npm run dev
 `npm run dev` runs the server and web app together;
 `npm run dev:server` / `npm run dev:web` run them individually.
 
-### YouTube playlist sync (optional)
+### Google OAuth (optional)
 
-The app works fully without this: it just skips the "connect YouTube"
-step and the in-app queue is the only source of truth. To enable real
-playlist sync:
+One Google Cloud OAuth client powers two independent, optional features.
+The app works fully without either: room creation/join/queue/voting never
+require Google at all.
+
+- **YouTube playlist sync**: lets a room host mirror the queue to a real
+  YouTube playlist. Skipped if unconfigured; the connect button 503s.
+- **"Continue with Google" sign-in**: an alternative to email/password for
+  the optional account system. Skipped if unconfigured; the button
+  redirects back with an error instead of crashing.
+
+Setup:
 
 1. [console.cloud.google.com](https://console.cloud.google.com) → create a
-   project → APIs & Services → Library → enable **YouTube Data API v3**.
+   project → APIs & Services → Library → enable **YouTube Data API v3**
+   (only needed for playlist sync, not for sign-in).
 2. APIs & Services → OAuth consent screen → User type **External** → fill
-   in an app name/contact email → add scope `.../auth/youtube` → under
-   **Test users**, add the Google account you'll test with (stay in
-   "Testing" status, no Google review needed for personal use).
+   in an app name/contact email → add scopes `.../auth/youtube` and
+   `openid`/`email`/`profile` → under **Test users**, add the Google
+   account(s) you'll test with (stay in "Testing" status, no Google
+   review needed for personal use).
 3. APIs & Services → Credentials → Create Credentials → **OAuth client
-   ID** → Application type **Web application** → Authorized redirect URIs:
-   `http://localhost:4000/api/youtube/callback`.
+   ID** → Application type **Web application** → Authorized redirect
+   URIs, add both:
+   - `http://localhost:4000/api/youtube/callback`
+   - `http://localhost:4000/api/auth/google/callback`
 4. Copy the Client ID/Secret into `apps/server/.env`:
    ```
    GOOGLE_CLIENT_ID=...
    GOOGLE_CLIENT_SECRET=...
    GOOGLE_REDIRECT_URI=http://localhost:4000/api/youtube/callback
+   GOOGLE_AUTH_REDIRECT_URI=http://localhost:4000/api/auth/google/callback
    ```
+
+Either feature can be left unconfigured independently: they only share
+the client credentials, not a config flag.
+
+### Video length check (optional)
+
+Adding a video over 12 minutes is rejected with an error, but this needs
+a video's duration, which the oEmbed endpoint used for title/thumbnail
+doesn't return. It's looked up via the YouTube Data API v3 instead, using
+a plain API key (not the OAuth client above):
+
+1. Same Google Cloud project → APIs & Services → Credentials → Create
+   Credentials → **API key**. Optionally restrict it to YouTube Data API
+   v3 (already enabled in the OAuth setup above).
+2. Copy it into `apps/server/.env`:
+   ```
+   YOUTUBE_API_KEY=...
+   ```
+
+Left unset, the length check is skipped entirely and videos of any
+length are allowed through, rather than blocking adds altogether.
 
 ## Data model
 
-- **User** (optional account): email, password hash, display name; can
-  host or join rooms, which then show up in that account's room history
+- **User** (optional account): email, display name, password hash (null
+  for Google-only accounts); can host or join rooms, which then show up
+  in that account's room history
 - **Room**: join code, host, YouTube playlist + OAuth tokens (once
   connected)
 - **Participant**: a user or guest attached to a room
@@ -153,8 +194,6 @@ for the full schema.
 
 Not built yet:
 
-- **Google sign-in/register**: "Continue with Google" alongside the
-  existing email/password flow, matched to an account by email.
 - **Production deployment**: hosting for the server/web apps, a
-  production Postgres/Redis, and a second OAuth redirect URI for the
-  live domain.
+  production Postgres/Redis, and a second set of OAuth redirect URIs for
+  the live domain.

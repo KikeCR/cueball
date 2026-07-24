@@ -3,6 +3,9 @@ import {
   MAX_NAME_LENGTH,
   SocketEvents,
   type ActionError,
+  type ActionOk,
+  type ParticipantRemovePayload,
+  type ParticipantRemovedPayload,
   type RoomJoinPayload,
   type RoomJoinResult,
   type RoomStatePayload,
@@ -11,6 +14,7 @@ import { markConnected, markDisconnected } from "../redis/presence.js"
 import {
   addParticipant,
   getRoomState,
+  removeParticipant,
   touchRoomActivity,
 } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
@@ -122,6 +126,44 @@ export function registerRoomHandlers(io: Server): void {
           socket
             .to(room.id)
             .emit(SocketEvents.RoomState, state satisfies RoomStatePayload)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.ParticipantRemove,
+      (
+        payload: ParticipantRemovePayload,
+        ack?: (result: ActionOk | ActionError) => void,
+      ) => {
+        void (async () => {
+          const { participantId: requesterId, roomId } = socket.data
+          if (!requesterId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const result = await removeParticipant({
+            roomId,
+            requesterId,
+            targetId: payload.participantId,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
+
+          const roomSockets = await io.in(roomId).fetchSockets()
+          for (const remote of roomSockets) {
+            if (remote.data.participantId !== result.removed.id) continue
+            remote.emit(SocketEvents.ParticipantRemoved, {
+              reason: "You were removed from this room by the host",
+            } satisfies ParticipantRemovedPayload)
+            remote.disconnect(true)
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
         })()
       },
     )

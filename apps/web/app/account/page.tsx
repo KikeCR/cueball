@@ -1,24 +1,52 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { useAuth } from "../../context/AuthContext"
 import { LoginForm } from "../../components/LoginForm"
 import { RegisterForm } from "../../components/RegisterForm"
+import { GoogleAuthButton } from "../../components/GoogleAuthButton"
 import { RoomHistoryList } from "../../components/RoomHistoryList"
 import { Card } from "../../components/ui/card"
 import { Button } from "../../components/ui/button"
 
 type Tab = "login" | "register"
 
-export default function AccountPage() {
-  const { user, loading, logout } = useAuth()
-  const router = useRouter()
-  const [tab, setTab] = useState<Tab>("login")
+const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
+  google_not_configured: "Google sign-in isn't set up on this server.",
+  google_invalid_response: "That Google sign-in link expired. Please try again.",
+  google_auth_failed: "Google sign-in failed. Please try again.",
+}
 
-  if (loading) return null
+export default function AccountPage() {
+  const { user, loading, applyToken, logout } = useAuth()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [tab, setTab] = useState<Tab>("login")
+  const [exchangingToken, setExchangingToken] = useState(false)
+  const [googleError, setGoogleError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const token = searchParams.get("token")
+    const error = searchParams.get("error")
+    if (!token && !error) return
+
+    if (error) {
+      setGoogleError(GOOGLE_ERROR_MESSAGES[error] ?? "Google sign-in failed.")
+    }
+    if (token) {
+      setExchangingToken(true)
+      applyToken(token)
+        .catch(() => setGoogleError("Google sign-in failed. Please try again."))
+        .finally(() => setExchangingToken(false))
+    }
+    router.replace("/account")
+    // Only ever needs to run once, right after a redirect back from Google.
+  }, [])
+
+  if (loading || exchangingToken) return null
 
   if (!user) {
     return (
@@ -50,11 +78,22 @@ export default function AccountPage() {
               Create account
             </button>
           </div>
+          {googleError && (
+            <p role="alert" className="text-sm text-danger">
+              {googleError}
+            </p>
+          )}
           {tab === "login" ? (
             <LoginForm onSuccess={() => router.push("/account")} />
           ) : (
             <RegisterForm onSuccess={() => router.push("/account")} />
           )}
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-muted">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <GoogleAuthButton />
         </Card>
       </main>
     )

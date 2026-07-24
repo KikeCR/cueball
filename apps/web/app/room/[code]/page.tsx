@@ -24,8 +24,10 @@ function RoomView({ roomCode }: { roomCode: string }) {
     self,
     connected,
     reconnecting,
+    removedReason,
     voteOnQueueItem,
     removeQueueItem,
+    removeParticipant,
   } = useRoom()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -64,8 +66,8 @@ function RoomView({ roomCode }: { roomCode: string }) {
       <main className="mx-auto max-w-2xl px-4 py-12">
         <Card className="mx-auto flex max-w-sm flex-col gap-4 text-center">
           <h1 className="text-2xl font-bold">{displayName}</h1>
-          <p className="text-sm text-muted">
-            {connected ? "Enter a name to join." : "Connecting…"}
+          <p className={cn("text-sm", removedReason ? "text-danger" : "text-muted")}>
+            {removedReason ?? (connected ? "Enter a name to join." : "Connecting…")}
           </p>
           <JoinRoomForm />
         </Card>
@@ -82,6 +84,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
   const handleRemove = (queueItemId: string) => {
     removeQueueItem(queueItemId).catch((err: unknown) => {
       console.error("Failed to remove queue item", err)
+    })
+  }
+
+  const handleRemoveParticipant = (participantId: string) => {
+    removeParticipant(participantId).catch((err: unknown) => {
+      console.error("Failed to remove participant", err)
     })
   }
 
@@ -135,7 +143,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
           <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             <Users className="size-3.5" /> Participants
           </h2>
-          <ParticipantList participants={participants} selfId={self.id} />
+          <ParticipantList
+            participants={participants}
+            selfId={self.id}
+            isSelfHost={self.isHost}
+            onRemove={handleRemoveParticipant}
+          />
         </Card>
 
         <Card className="flex flex-col gap-3">

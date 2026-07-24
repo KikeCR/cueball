@@ -1,5 +1,6 @@
 import type { Server } from "socket.io"
 import {
+  MAX_VIDEO_DURATION_SECONDS,
   SocketEvents,
   type ActionError,
   type ActionOk,
@@ -12,7 +13,12 @@ import {
   castVote,
   removeQueueItem,
 } from "../services/queueService.js"
-import { fetchVideoMetadata, parseYoutubeVideoId } from "../services/youtube.js"
+import {
+  fetchVideoDurationSeconds,
+  fetchVideoMetadata,
+  formatDurationClock,
+  parseYoutubeVideoId,
+} from "../services/youtube.js"
 import { prisma } from "../services/prisma.js"
 import {
   addVideoToPlaylist,
@@ -54,6 +60,17 @@ export function registerQueueHandlers(io: Server): void {
         const metadata = await fetchVideoMetadata(videoId)
         if (!metadata) {
           ack?.({ error: "Couldn't find that video" })
+          return
+        }
+
+        const durationSeconds = await fetchVideoDurationSeconds(videoId)
+        if (
+          durationSeconds !== null &&
+          durationSeconds > MAX_VIDEO_DURATION_SECONDS
+        ) {
+          ack?.({
+            error: `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter (this one is ${formatDurationClock(durationSeconds)})`,
+          })
           return
         }
 

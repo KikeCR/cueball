@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ParticipantWithPresence } from "@cueball/shared"
 import { ParticipantListPageObject } from "../../test/page-objects/ParticipantListPageObject"
 
@@ -44,5 +44,36 @@ describe("ParticipantList", () => {
     expect(list.hasName("Riley")).toBe(true)
     expect(list.selfBadge).toBeInTheDocument()
     expect(list.presenceIndicator("disconnected")).toBeInTheDocument()
+  })
+
+  it("hides remove buttons from a non-host", () => {
+    const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "guest-1",
+      isSelfHost: false,
+      onRemove: vi.fn(),
+    })
+
+    expect(list.removeButton("Sam")).not.toBeInTheDocument()
+    expect(list.removeButton("Riley")).not.toBeInTheDocument()
+  })
+
+  it("lets the host remove someone else, but not themselves", async () => {
+    const onRemove = vi.fn()
+    const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "host-1",
+      isSelfHost: true,
+      onRemove,
+    })
+
+    expect(list.removeButton("Sam")).not.toBeInTheDocument()
+    await list.clickRemove("Riley")
+
+    expect(onRemove).toHaveBeenCalledWith("guest-1")
   })
 })
