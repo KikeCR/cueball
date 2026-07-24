@@ -32,6 +32,26 @@ export function verifyParticipantToken(
   }
 }
 
+interface UserTokenPayload {
+  type: "user"
+  userId: string
+}
+
+export function signUserToken(userId: string): string {
+  const payload: UserTokenPayload = { type: "user", userId }
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: "30d" })
+}
+
+export function verifyUserToken(token: string): { userId: string } | null {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as UserTokenPayload
+    if (decoded.type !== "user") return null
+    return { userId: decoded.userId }
+  } catch {
+    return null
+  }
+}
+
 interface YoutubeOAuthStatePayload {
   type: "youtube-oauth-state"
   roomId: string

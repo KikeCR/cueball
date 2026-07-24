@@ -1,5 +1,6 @@
 import { randomInt } from "node:crypto"
 import { Prisma, type Participant, type Room } from "@prisma/client"
+import { ROOM_CODE_LENGTH } from "@cueball/shared"
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import {
   serializeParticipant,
@@ -10,12 +11,11 @@ import { prisma } from "./prisma.js"
 
 // Excludes visually ambiguous characters (0/O, 1/I/L).
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-const CODE_LENGTH = 6
 const MAX_CODE_ATTEMPTS = 5
 
 function generateRoomCode(): string {
   let code = ""
-  for (let i = 0; i < CODE_LENGTH; i++) {
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
     code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]
   }
   return code
@@ -30,22 +30,24 @@ function isUniqueConstraintError(err: unknown): boolean {
 export async function createRoomWithHost(params: {
   hostName: string
   roomName?: string
+  userId?: string
 }): Promise<{ room: Room; participant: Participant }> {
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
     const code = generateRoomCode()
     try {
       return await prisma.$transaction(async (tx) => {
         const room = await tx.room.create({
-          data: { code, name: params.roomName },
+          data: { code, name: params.roomName, hostUserId: params.userId },
         })
         const participant = await tx.participant.create({
-          data: { roomId: room.id, guestName: params.hostName, isHost: true },
+          data: {
+            roomId: room.id,
+            guestName: params.hostName,
+            isHost: true,
+            userId: params.userId,
+          },
         })
-        const updatedRoom = await tx.room.update({
-          where: { id: room.id },
-          data: { controllerId: participant.id },
-        })
-        return { room: updatedRoom, participant }
+        return { room, participant }
       })
     } catch (err) {
       if (isUniqueConstraintError(err)) continue
@@ -62,6 +64,7 @@ export async function getRoomByCode(code: string): Promise<Room | null> {
 export async function addParticipant(params: {
   roomId: string
   guestName: string
+  userId?: string
 }): Promise<Participant> {
   return prisma.$transaction(async (tx) => {
     const participant = await tx.participant.create({
@@ -69,17 +72,12 @@ export async function addParticipant(params: {
         roomId: params.roomId,
         guestName: params.guestName,
         isHost: false,
+        userId: params.userId,
       },
-    })
-    const room = await tx.room.findUniqueOrThrow({
-      where: { id: params.roomId },
     })
     await tx.room.update({
       where: { id: params.roomId },
-      data: {
-        lastActiveAt: new Date(),
-        ...(room.controllerId ? {} : { controllerId: participant.id }),
-      },
+      data: { lastActiveAt: new Date() },
     })
     return participant
   })
@@ -117,6 +115,31 @@ export async function sweepExpiredRooms(
     deletedCount++
   }
   return deletedCount
+}
+
+export async function getUserRoomHistory(userId: string): Promise<
+  Array<{
+    id: string
+    code: string
+    name: string | null
+    isHost: boolean
+    lastActiveAt: Date
+  }>
+> {
+  const rooms = await prisma.room.findMany({
+    where: {
+      OR: [{ hostUserId: userId }, { participants: { some: { userId } } }],
+    },
+    select: { id: true, code: true, name: true, hostUserId: true, lastActiveAt: true },
+    orderBy: { lastActiveAt: "desc" },
+  })
+  return rooms.map((room) => ({
+    id: room.id,
+    code: room.code,
+    name: room.name,
+    isHost: room.hostUserId === userId,
+    lastActiveAt: room.lastActiveAt,
+  }))
 }
 
 export async function getRoomState(roomId: string) {

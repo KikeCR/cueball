@@ -2,8 +2,10 @@ import jwt from "jsonwebtoken"
 import { describe, expect, it } from "vitest"
 import {
   signParticipantToken,
+  signUserToken,
   signYoutubeOAuthState,
   verifyParticipantToken,
+  verifyUserToken,
   verifyYoutubeOAuthState,
 } from "./tokens.js"
 
@@ -31,6 +33,22 @@ describe("participant token", () => {
   it("rejects a token of the wrong type (e.g. an OAuth state token)", () => {
     const stateToken = signYoutubeOAuthState("room-1")
     expect(verifyParticipantToken(stateToken)).toBeNull()
+  })
+})
+
+describe("user token", () => {
+  it("round-trips the user id", () => {
+    const token = signUserToken("user-1")
+    expect(verifyUserToken(token)).toEqual({ userId: "user-1" })
+  })
+
+  it("rejects garbage input", () => {
+    expect(verifyUserToken("not-a-jwt")).toBeNull()
+  })
+
+  it("rejects a token of the wrong type (e.g. a participant token)", () => {
+    const participantToken = signParticipantToken("participant-1", "room-1")
+    expect(verifyUserToken(participantToken)).toBeNull()
   })
 })
 

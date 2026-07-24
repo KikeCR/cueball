@@ -1,7 +1,5 @@
-import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { CreateRoomForm } from "./CreateRoomForm"
+import { CreateRoomFormPageObject } from "../../test/page-objects/CreateRoomFormPageObject"
 
 const pushMock = vi.fn()
 
@@ -11,6 +9,10 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../../api/client", () => ({
   api: { post: vi.fn() },
+}))
+
+vi.mock("../../context/AuthContext", () => ({
+  useAuth: () => ({ token: null, user: null }),
 }))
 
 import { api } from "../../api/client"
@@ -29,10 +31,7 @@ describe("CreateRoomForm", () => {
         code: "ABC123",
         name: null,
         hostUserId: null,
-        controllerId: "p1",
-        currentTrackId: null,
-        playbackState: "PAUSED",
-        playbackPosition: 0,
+        youtubePlaylistId: null,
         createdAt: new Date().toISOString(),
       },
       participant: {
@@ -47,16 +46,16 @@ describe("CreateRoomForm", () => {
       participantToken: "token-123",
     })
 
-    const user = userEvent.setup()
-    render(<CreateRoomForm />)
+    const form = new CreateRoomFormPageObject()
 
-    await user.type(screen.getByLabelText("Your name"), "Sam")
-    await user.click(screen.getByRole("button", { name: /create room/i }))
+    await form.fillHostName("Sam")
+    await form.submit()
 
-    expect(api.post).toHaveBeenCalledWith("/api/rooms", {
-      hostName: "Sam",
-      roomName: undefined,
-    })
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/rooms",
+      { hostName: "Sam", roomName: undefined },
+      undefined,
+    )
     expect(localStorage.getItem("cueball:room:ABC123")).toContain("token-123")
     expect(pushMock).toHaveBeenCalledWith("/room/ABC123")
   })
@@ -64,13 +63,12 @@ describe("CreateRoomForm", () => {
   it("shows an error if room creation fails", async () => {
     vi.mocked(api.post).mockRejectedValue(new Error("Server unavailable"))
 
-    const user = userEvent.setup()
-    render(<CreateRoomForm />)
+    const form = new CreateRoomFormPageObject()
 
-    await user.type(screen.getByLabelText("Your name"), "Sam")
-    await user.click(screen.getByRole("button", { name: /create room/i }))
+    await form.fillHostName("Sam")
+    await form.submit()
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await form.findErrorAlert()).toHaveTextContent(
       "Server unavailable",
     )
     expect(pushMock).not.toHaveBeenCalled()

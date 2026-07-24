@@ -1,7 +1,9 @@
 import type { ReactNode } from "react"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "../context/ThemeContext"
+import { AuthProvider } from "../context/AuthContext"
 import { ThemeToggle } from "../components/ThemeToggle"
+import { AccountMenu } from "../components/AccountMenu"
 import "./globals.css"
 
 const inter = Inter({
@@ -31,10 +33,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <ThemeProvider>
-          <div className="fixed right-4 top-4 z-50">
-            <ThemeToggle />
-          </div>
-          {children}
+          <AuthProvider>
+            <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
+              <AccountMenu />
+              <ThemeToggle />
+            </div>
+            <div className="pt-16">{children}</div>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

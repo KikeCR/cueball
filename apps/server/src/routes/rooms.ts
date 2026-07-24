@@ -1,17 +1,18 @@
 import { Router } from "express"
-import type {
-  CreateRoomRequest,
-  CreateRoomResponse,
-  RoomPreview,
+import {
+  MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
+  type CreateRoomRequest,
+  type CreateRoomResponse,
+  type RoomPreview,
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
+import { optionalAuth } from "../middleware/auth.js"
 import { createRoomWithHost, getRoomByCode } from "../services/roomService.js"
 import { serializeParticipant, serializeRoom } from "../services/serializers.js"
 import { signParticipantToken } from "../services/tokens.js"
 
 export const roomsRouter = Router()
-
-const MAX_NAME_LENGTH = 40
 
 function readTrimmedString(
   value: unknown,
@@ -24,6 +25,7 @@ function readTrimmedString(
 
 roomsRouter.post(
   "/",
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const body = req.body as Partial<CreateRoomRequest>
     const hostName = readTrimmedString(body.hostName, MAX_NAME_LENGTH)
@@ -31,11 +33,12 @@ roomsRouter.post(
       res.status(400).json({ error: "hostName is required" })
       return
     }
-    const roomName = readTrimmedString(body.roomName, 80)
+    const roomName = readTrimmedString(body.roomName, MAX_ROOM_NAME_LENGTH)
 
     const { room, participant } = await createRoomWithHost({
       hostName,
       roomName,
+      userId: req.userId,
     })
     const participantToken = signParticipantToken(participant.id, room.id)
 

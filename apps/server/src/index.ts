@@ -9,6 +9,7 @@ import cors from "cors"
 import { Server } from "socket.io"
 import { createAdapter } from "@socket.io/redis-adapter"
 import { redis } from "./redis/client.js"
+import { authRouter } from "./routes/auth.js"
 import { roomsRouter } from "./routes/rooms.js"
 import { youtubeRouter } from "./routes/youtube.js"
 import { registerRoomHandlers } from "./sockets/room.js"
@@ -40,6 +41,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/rooms", roomsRouter)
 app.use("/api", youtubeRouter)
+app.use("/api", authRouter)
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err)

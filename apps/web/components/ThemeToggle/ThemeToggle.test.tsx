@@ -1,37 +1,19 @@
-import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { describe, expect, it } from "vitest"
-import { ThemeProvider } from "../../context/ThemeContext"
-import { ThemeToggle } from "./ThemeToggle"
+import { ThemeTogglePageObject } from "../../test/page-objects/ThemeTogglePageObject"
 
 describe("ThemeToggle", () => {
   it("defaults to a switch-to-dark label when the system prefers light", () => {
-    render(
-      <ThemeProvider>
-        <ThemeToggle />
-      </ThemeProvider>,
-    )
-    expect(
-      screen.getByRole("button", { name: "Switch to dark theme" }),
-    ).toBeInTheDocument()
+    const toggle = new ThemeTogglePageObject()
+    expect(toggle.label).toBe("Switch to dark theme")
   })
 
   it("flips the label and persists the choice to localStorage on click", async () => {
-    const user = userEvent.setup()
-    render(
-      <ThemeProvider>
-        <ThemeToggle />
-      </ThemeProvider>,
-    )
+    const toggle = new ThemeTogglePageObject()
 
-    await user.click(
-      screen.getByRole("button", { name: "Switch to dark theme" }),
-    )
+    await toggle.click()
 
-    expect(
-      screen.getByRole("button", { name: "Switch to light theme" }),
-    ).toBeInTheDocument()
-    expect(localStorage.getItem("theme")).toBe("dark")
-    expect(document.documentElement.classList.contains("dark")).toBe(true)
+    expect(toggle.label).toBe("Switch to light theme")
+    expect(toggle.storedTheme).toBe("dark")
+    expect(toggle.isDarkClassApplied).toBe(true)
   })
 })

@@ -7,11 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum PlaybackState {
-  PLAYING
-  PAUSED
-}
-
 model User {
   id           String   @id @default(cuid())
   email        String?  @unique
@@ -32,15 +27,6 @@ model Room {
 
   hostUserId String?
   hostUser   User?   @relation("RoomHost", fields: [hostUserId], references: [id], onDelete: SetNull)
-
-  controllerId String?      @unique
-  controller   Participant? @relation("RoomController", fields: [controllerId], references: [id], onDelete: SetNull)
-
-  currentTrackId String?    @unique
-  currentTrack   QueueItem? @relation("RoomCurrentTrack", fields: [currentTrackId], references: [id], onDelete: SetNull)
-
-  playbackState    PlaybackState @default(PAUSED)
-  playbackPosition Float         @default(0)
 
   youtubeAccessToken    String?
   youtubeRefreshToken   String?
@@ -71,7 +57,6 @@ model Participant {
 
   addedQueueItems QueueItem[] @relation("QueueItemAddedBy")
   votes           Vote[]
-  controlledRoom  Room?       @relation("RoomController")
 
   @@map("participants")
 }
@@ -93,8 +78,7 @@ model QueueItem {
   playedAt  DateTime?
   createdAt DateTime  @default(now())
 
-  votes         Vote[]
-  currentInRoom Room?  @relation("RoomCurrentTrack")
+  votes Vote[]
 
   @@index([roomId])
   @@map("queue_items")

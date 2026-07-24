@@ -8,9 +8,10 @@ playlist the host can just open on their TV.
 Built as a portfolio piece focused on real-time systems and WebSocket
 architecture (React + Node.js), with a guest-first, two-tier auth model.
 
-> Status: rooms (create/join/presence), queue + live voting, and YouTube
-> playlist sync are working end to end. Optional real accounts (JWT) are
-> not built yet, everything currently runs on the guest/participant flow.
+> Status: rooms (create/join/presence), queue + live voting, YouTube
+> playlist sync, and optional real accounts (email/password, with room
+> history) are all working end to end. The guest/participant flow still
+> works fully without an account.
 
 ## How it works
 
@@ -26,6 +27,9 @@ architecture (React + Node.js), with a guest-first, two-tier auth model.
   for anyone to open it directly.
 - Presence (who's connected right now) is tracked in Redis so reconnecting
   is instant and doesn't lose your spot in the room.
+- Signing up (email/password) is optional. It links your name to rooms
+  you create or join, so you get a "your rooms" history to jump back
+  into, but it's never required to use the app.
 
 Earlier drafts of this project explored two other approaches for the
 "plays on the TV" part: embedding a YouTube IFrame Player synced across
@@ -46,7 +50,8 @@ your phone, play from the TV's own YouTube app).
   endpoint for the in-app queue, optionally synced to a real playlist via
   the YouTube Data API v3 (OAuth)
 - **Auth**: guests join with a nickname only (JWT-based participant
-  session token for reconnect); optional real accounts not yet built
+  session token for reconnect); optional real accounts (email/password,
+  bcrypt-hashed, JWT session token) link a participant to a room history
 - **Local dev**: Docker Compose (Postgres, Redis, server, web)
 
 ## Project structure
@@ -131,10 +136,10 @@ playlist sync:
 
 ## Data model
 
-- **User** (optional account, not yet wired up): email, password hash,
-  display name
-- **Room**: join code, host, current controller, YouTube playlist +
-  OAuth tokens (once connected)
+- **User** (optional account): email, password hash, display name; can
+  host or join rooms, which then show up in that account's room history
+- **Room**: join code, host, YouTube playlist + OAuth tokens (once
+  connected)
 - **Participant**: a user or guest attached to a room
 - **QueueItem**: a queued YouTube video, added by a participant, with a
   vote-derived score and (once synced) its YouTube playlist item id
@@ -143,3 +148,13 @@ playlist sync:
 
 See [`apps/server/prisma/schema.prisma`](apps/server/prisma/schema.prisma)
 for the full schema.
+
+## Roadmap
+
+Not built yet:
+
+- **Google sign-in/register**: "Continue with Google" alongside the
+  existing email/password flow, matched to an account by email.
+- **Production deployment**: hosting for the server/web apps, a
+  production Postgres/Redis, and a second OAuth redirect URI for the
+  live domain.

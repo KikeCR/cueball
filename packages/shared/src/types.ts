@@ -1,14 +1,8 @@
-export type PlaybackState = "PLAYING" | "PAUSED"
-
 export interface Room {
   id: string
   code: string
   name: string | null
   hostUserId: string | null
-  controllerId: string | null
-  currentTrackId: string | null
-  playbackState: PlaybackState
-  playbackPosition: number
   youtubePlaylistId: string | null
   createdAt: string
 }
@@ -57,4 +51,19 @@ export interface Vote {
   participantId: string
   value: 1 | -1
   createdAt: string
+}
+
+export interface AuthUser {
+  id: string
+  email: string
+  displayName: string
+  createdAt: string
+}
+
+export interface RoomHistoryEntry {
+  id: string
+  code: string
+  name: string | null
+  isHost: boolean
+  lastActiveAt: string
 }

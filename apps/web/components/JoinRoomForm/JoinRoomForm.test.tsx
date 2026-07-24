@@ -1,7 +1,5 @@
-import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { JoinRoomForm } from "./JoinRoomForm"
+import { JoinRoomFormPageObject } from "../../test/page-objects/JoinRoomFormPageObject"
 
 const joinAsGuestMock = vi.fn()
 let joinError: string | null = null
@@ -18,18 +16,17 @@ describe("JoinRoomForm", () => {
 
   it("joins with the entered name", async () => {
     joinAsGuestMock.mockResolvedValue(undefined)
-    const user = userEvent.setup()
-    render(<JoinRoomForm />)
+    const form = new JoinRoomFormPageObject()
 
-    await user.type(screen.getByLabelText("Your name"), "Riley")
-    await user.click(screen.getByRole("button", { name: /join room/i }))
+    await form.fillName("Riley")
+    await form.submit()
 
     expect(joinAsGuestMock).toHaveBeenCalledWith("Riley")
   })
 
   it("surfaces a join error from context", () => {
     joinError = "Room not found"
-    render(<JoinRoomForm />)
-    expect(screen.getByRole("alert")).toHaveTextContent("Room not found")
+    const form = new JoinRoomFormPageObject()
+    expect(form.errorAlert).toHaveTextContent("Room not found")
   })
 })

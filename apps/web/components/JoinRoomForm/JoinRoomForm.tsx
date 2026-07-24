@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react"
 import { Loader2 } from "lucide-react"
+import { MAX_NAME_LENGTH } from "@cueball/shared"
 import { useRoom } from "../../context/RoomContext"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -33,7 +34,7 @@ export function JoinRoomForm() {
         <Input
           value={guestName}
           onChange={(event) => setGuestName(event.target.value)}
-          maxLength={40}
+          maxLength={MAX_NAME_LENGTH}
           required
         />
       </Label>

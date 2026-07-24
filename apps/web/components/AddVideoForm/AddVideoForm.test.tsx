@@ -1,7 +1,5 @@
-import { render, screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { AddVideoForm } from "./AddVideoForm"
+import { AddVideoFormPageObject } from "../../test/page-objects/AddVideoFormPageObject"
 
 const addToQueueMock = vi.fn()
 
@@ -16,29 +14,25 @@ describe("AddVideoForm", () => {
 
   it("submits the pasted link and clears the input", async () => {
     addToQueueMock.mockResolvedValue(undefined)
-    const user = userEvent.setup()
-    render(<AddVideoForm />)
+    const form = new AddVideoFormPageObject()
 
-    const input = screen.getByLabelText("YouTube link")
-    await user.type(input, "https://youtu.be/dQw4w9WgXcQ")
-    await user.click(screen.getByRole("button", { name: /^add$/i }))
+    await form.fillLink("https://youtu.be/dQw4w9WgXcQ")
+    await form.submit()
 
     expect(addToQueueMock).toHaveBeenCalledWith("https://youtu.be/dQw4w9WgXcQ")
-    expect(input).toHaveValue("")
+    expect(form.linkInput).toHaveValue("")
   })
 
   it("shows an error and keeps the input when the server rejects the link", async () => {
     addToQueueMock.mockRejectedValue(new Error("Couldn't find that video"))
-    const user = userEvent.setup()
-    render(<AddVideoForm />)
+    const form = new AddVideoFormPageObject()
 
-    const input = screen.getByLabelText("YouTube link")
-    await user.type(input, "https://youtu.be/bad")
-    await user.click(screen.getByRole("button", { name: /^add$/i }))
+    await form.fillLink("https://youtu.be/bad")
+    await form.submit()
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
+    expect(await form.findErrorAlert()).toHaveTextContent(
       "Couldn't find that video",
     )
-    expect(input).toHaveValue("https://youtu.be/bad")
+    expect(form.linkInput).toHaveValue("https://youtu.be/bad")
   })
 })

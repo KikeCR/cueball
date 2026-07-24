@@ -1,10 +1,16 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import type { CreateRoomRequest, CreateRoomResponse } from "@cueball/shared"
+import {
+  MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
+  type CreateRoomRequest,
+  type CreateRoomResponse,
+} from "@cueball/shared"
 import { api } from "../../api/client"
+import { useAuth } from "../../context/AuthContext"
 import { storeParticipantToken } from "../../utils/participantSession"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -12,10 +18,15 @@ import { Label } from "../ui/label"
 
 export function CreateRoomForm() {
   const router = useRouter()
+  const { token, user } = useAuth()
   const [hostName, setHostName] = useState("")
   const [roomName, setRoomName] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (user) setHostName((current) => current || user.displayName)
+  }, [user])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -29,7 +40,11 @@ export function CreateRoomForm() {
         hostName: trimmedHostName,
         roomName: roomName.trim() || undefined,
       }
-      const response = await api.post<CreateRoomResponse>("/api/rooms", request)
+      const response = await api.post<CreateRoomResponse>(
+        "/api/rooms",
+        request,
+        token ?? undefined,
+      )
       storeParticipantToken(response.room.code, response.participantToken)
       router.push(`/room/${response.room.code}`)
     } catch (err) {
@@ -45,7 +60,7 @@ export function CreateRoomForm() {
         <Input
           value={hostName}
           onChange={(event) => setHostName(event.target.value)}
-          maxLength={40}
+          maxLength={MAX_NAME_LENGTH}
           required
         />
       </Label>
@@ -54,7 +69,7 @@ export function CreateRoomForm() {
         <Input
           value={roomName}
           onChange={(event) => setRoomName(event.target.value)}
-          maxLength={80}
+          maxLength={MAX_ROOM_NAME_LENGTH}
         />
       </Label>
       {error && (

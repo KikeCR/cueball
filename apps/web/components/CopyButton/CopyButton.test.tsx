@@ -1,6 +1,5 @@
-import { act, fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { CopyButton } from "./CopyButton"
+import { CopyButtonPageObject } from "../../test/page-objects/CopyButtonPageObject"
 
 describe("CopyButton", () => {
   const writeText = vi.fn().mockResolvedValue(undefined)
@@ -14,21 +13,20 @@ describe("CopyButton", () => {
   })
 
   it("copies the value to the clipboard and shows confirmation, then reverts", async () => {
-    render(<CopyButton value="ABC123" label="Copy room code" />)
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Copy room code" }))
+    const copyButton = new CopyButtonPageObject({
+      value: "ABC123",
+      label: "Copy room code",
     })
 
+    await copyButton.click()
+
     expect(writeText).toHaveBeenCalledWith("ABC123")
-    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument()
+    expect(copyButton.accessibleName).toBe("Copied")
 
     expect(
-      await screen.findByRole(
-        "button",
-        { name: "Copy room code" },
-        { timeout: 2000 },
-      ),
+      await copyButton.findByAccessibleName("Copy room code", {
+        timeout: 2000,
+      }),
     ).toBeInTheDocument()
   })
 })
