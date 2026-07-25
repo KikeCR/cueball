@@ -12,7 +12,7 @@ interface CastControlsCardProps {
 
 export function CastControlsCard({ isHost }: CastControlsCardProps) {
   const { cast, queue, sendCastCommand } = useRoom()
-  const { supported, status, deviceName, connect } = useCastSender()
+  const { supported, status, deviceName, error, connect } = useCastSender()
   const nowPlaying =
     queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
 
@@ -46,6 +46,11 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
         {!supported && (
           <p className="text-xs text-muted">
             Casting requires Chrome on desktop or Android.
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="text-xs text-danger">
+            {error}
           </p>
         )}
       </div>
