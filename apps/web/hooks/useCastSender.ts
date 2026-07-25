@@ -27,8 +27,29 @@ interface UseCastSenderResult {
   supported: boolean
   status: CastConnectionStatus
   deviceName: string | null
+  /** Set when the last connect attempt failed, so the reason is visible instead of just silently reverting to disconnected. */
+  error: string | null
   connect: () => Promise<void>
   disconnect: () => void
+}
+
+function describeCastErrorCode(code: string): string {
+  switch (code) {
+    case "cancel":
+      return "Cast device selection was cancelled."
+    case "timeout":
+      return "Timed out looking for a Cast device."
+    case "receiver_unavailable":
+      return "No Cast devices found — make sure the TV and this device are on the same Wi-Fi network."
+    case "extension_missing":
+    case "extension_not_compatible":
+      return "This browser's Cast support isn't available right now."
+    case "session_error":
+    case "channel_error":
+      return "Couldn't establish a connection with the Cast device."
+    default:
+      return "Couldn't connect to that Cast device."
+  }
 }
 
 /**
@@ -42,6 +63,7 @@ export function useCastSender(): UseCastSenderResult {
   const [supported, setSupported] = useState(false)
   const [status, setStatus] = useState<CastConnectionStatus>("disconnected")
   const [deviceName, setDeviceName] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const playerRef = useRef<cast.framework.RemotePlayer | null>(null)
   const controllerRef = useRef<cast.framework.RemotePlayerController | null>(
     null,
@@ -213,10 +235,12 @@ export function useCastSender(): UseCastSenderResult {
   const connect = useCallback(async () => {
     if (!supported || !socket || !window.cast?.framework) return
     setStatus("connecting")
+    setError(null)
     try {
       const errorCode = await window.cast.framework.CastContext.getInstance().requestSession()
       if (errorCode) {
         setStatus("disconnected")
+        setError(describeCastErrorCode(errorCode))
         return
       }
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession()
@@ -224,8 +248,13 @@ export function useCastSender(): UseCastSenderResult {
       setDeviceName(name)
       setStatus("connected")
       socket.emit(SocketEvents.CastSessionStarted, { deviceName: name }, () => {})
-    } catch {
+    } catch (err) {
       setStatus("disconnected")
+      setError(
+        describeCastErrorCode(
+          typeof err === "string" ? err : String((err as { code?: string })?.code ?? err),
+        ),
+      )
     }
   }, [supported, socket])
 
@@ -236,5 +265,5 @@ export function useCastSender(): UseCastSenderResult {
     socket?.emit(SocketEvents.CastSessionEnded, () => {})
   }, [socket])
 
-  return { supported, status, deviceName, connect, disconnect }
+  return { supported, status, deviceName, error, connect, disconnect }
 }
