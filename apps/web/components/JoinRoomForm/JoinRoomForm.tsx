@@ -5,13 +5,15 @@ import { Loader2 } from "lucide-react"
 import { MAX_NAME_LENGTH } from "@cueball/shared"
 import { useRoom } from "../../context/RoomContext"
 import { useAuth } from "../../context/AuthContext"
+import { useToast } from "../../context/ToastContext"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 
 export function JoinRoomForm() {
-  const { joinAsGuest, joinError } = useRoom()
+  const { joinAsGuest } = useRoom()
   const { user } = useAuth()
+  const toast = useToast()
   const [guestName, setGuestName] = useState("")
   const [submitting, setSubmitting] = useState(false)
 
@@ -26,8 +28,8 @@ export function JoinRoomForm() {
     setSubmitting(true)
     try {
       await joinAsGuest(guestName.trim())
-    } catch {
-      // joinError from context already reflects the failure
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to join room")
     } finally {
       setSubmitting(false)
     }
@@ -44,11 +46,6 @@ export function JoinRoomForm() {
           required
         />
       </Label>
-      {joinError && (
-        <p role="alert" className="text-sm text-danger">
-          {joinError}
-        </p>
-      )}
       <Button type="submit" disabled={submitting}>
         {submitting && <Loader2 className="size-4 animate-spin" />}
         {submitting ? "Joining…" : "Join room"}

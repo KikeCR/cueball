@@ -42,4 +42,10 @@ export const api = {
       body: body !== undefined ? JSON.stringify(body) : undefined,
       headers: authHeaders(token),
     }),
+  patch: <T>(path: string, body?: unknown, token?: string) =>
+    request<T>(path, {
+      method: "PATCH",
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: authHeaders(token),
+    }),
 }

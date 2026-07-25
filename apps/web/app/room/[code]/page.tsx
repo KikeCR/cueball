@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { Users, ListVideo, Plus, Youtube, Cast, Loader2 } from "lucide-react"
+import { Users, ListVideo, Plus, Youtube, Cast, Loader2, Trash2 } from "lucide-react"
 import type { RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
+import { useToast } from "../../../context/ToastContext"
 import { JoinRoomForm } from "../../../components/JoinRoomForm"
 import { ParticipantList } from "../../../components/ParticipantList"
 import { AddVideoForm } from "../../../components/AddVideoForm"
@@ -15,6 +16,8 @@ import { PlaylistShare } from "../../../components/PlaylistShare"
 import { CastControlsCard } from "../../../components/CastControlsCard"
 import { CopyButton } from "../../../components/CopyButton"
 import { Card } from "../../../components/ui/card"
+import { Button } from "../../../components/ui/button"
+import { ConfirmDialog } from "../../../components/ui/confirmDialog"
 import { cn } from "../../../utils/cn"
 
 function RoomView({ roomCode }: { roomCode: string }) {
@@ -31,12 +34,16 @@ function RoomView({ roomCode }: { roomCode: string }) {
     removeQueueItem,
     reorderQueue,
     setQueueItemPlayed,
+    clearQueue,
+    clearHistory,
     removeParticipant,
     renameSelf,
   } = useRoom()
+  const toast = useToast()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [clearQueueDialogOpen, setClearQueueDialogOpen] = useState(false)
+  const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false)
 
   useEffect(() => {
     api
@@ -48,13 +55,10 @@ function RoomView({ roomCode }: { roomCode: string }) {
   }, [roomCode])
 
   useEffect(() => {
-    if (!actionError) return
-    const timer = window.setTimeout(() => setActionError(null), 5000)
-    return () => window.clearTimeout(timer)
-  }, [actionError])
-
-  useEffect(() => {
-    if (playlistSyncError) setActionError(playlistSyncError.message)
+    // Deliberately omits `toast` from deps: ToastProvider's context value is
+    // a fresh object every render (toasts array changes), so depending on
+    // it here would re-fire this on every toast, not just new sync failures.
+    if (playlistSyncError) toast.error(playlistSyncError.message)
   }, [playlistSyncError])
 
   if (previewError) {
@@ -85,7 +89,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-12">
         <Card className="mx-auto flex max-w-sm flex-col gap-4 text-center">
-          <h1 className="text-2xl font-bold">{displayName}</h1>
+          <h1 className="text-2xl font-bold">
+            {room || preview ? displayName : "Loading…"}
+          </h1>
           <p className={cn("text-sm", removedReason ? "text-danger" : "text-muted")}>
             {removedReason ?? (connected ? "Enter a name to join." : "Connecting…")}
           </p>
@@ -97,7 +103,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
 
   const reportActionError = (fallback: string) => (err: unknown) => {
     console.error(fallback, err)
-    setActionError(err instanceof Error ? err.message : fallback)
+    toast.error(err instanceof Error ? err.message : fallback)
   }
 
   const handleVote = (queueItemId: string, value: 1 | -1) => {
@@ -123,13 +129,33 @@ function RoomView({ roomCode }: { roomCode: string }) {
   }
 
   const handleRemoveParticipant = (participantId: string) => {
-    removeParticipant(participantId).catch(
-      reportActionError("Failed to remove participant"),
-    )
+    removeParticipant(participantId)
+      .then(() => toast.success("Participant removed"))
+      .catch(reportActionError("Failed to remove participant"))
   }
 
   const handleRename = (name: string) => {
     renameSelf(name).catch(reportActionError("Failed to rename"))
+  }
+
+  const handleClearQueue = () => {
+    setClearQueueDialogOpen(false)
+    clearQueue()
+      .then(({ clearedCount, totalCount }) => {
+        toast.success(
+          clearedCount < totalCount
+            ? `Cleared ${clearedCount} of ${totalCount} — some couldn't be removed from YouTube`
+            : `Cleared ${clearedCount} video${clearedCount === 1 ? "" : "s"}`,
+        )
+      })
+      .catch(reportActionError("Failed to clear the queue"))
+  }
+
+  const handleClearHistory = () => {
+    setClearHistoryDialogOpen(false)
+    clearHistory()
+      .then(() => toast.success("Played history cleared"))
+      .catch(reportActionError("Failed to clear played history"))
   }
 
   return (
@@ -152,15 +178,6 @@ function RoomView({ roomCode }: { roomCode: string }) {
           </p>
         </div>
       </div>
-
-      {actionError && (
-        <p
-          role="alert"
-          className="mb-5 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger"
-        >
-          {actionError}
-        </p>
-      )}
 
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-3">
@@ -226,9 +243,21 @@ function RoomView({ roomCode }: { roomCode: string }) {
         </Card>
 
         <Card className="flex flex-col gap-3">
-          <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
-            <ListVideo className="size-3.5" /> Queue
-          </h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
+              <ListVideo className="size-3.5" /> Queue
+            </h2>
+            {self.isHost && queue.some((item) => !item.playedAt) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setClearQueueDialogOpen(true)}
+              >
+                <Trash2 className="size-3.5" /> Clear queue
+              </Button>
+            )}
+          </div>
           <QueueList
             queue={queue}
             participants={participants}
@@ -237,10 +266,30 @@ function RoomView({ roomCode }: { roomCode: string }) {
             onRemove={handleRemove}
             onReorder={handleReorder}
             onSetPlayed={handleSetPlayed}
+            onClearHistory={() => setClearHistoryDialogOpen(true)}
             manualOrderActive={Boolean(room?.manualQueueOrder)}
           />
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={clearQueueDialogOpen}
+        title="Clear the queue?"
+        description="This removes every upcoming video for everyone in the room. Already-played history is kept."
+        confirmLabel="Clear queue"
+        danger
+        onConfirm={handleClearQueue}
+        onCancel={() => setClearQueueDialogOpen(false)}
+      />
+      <ConfirmDialog
+        open={clearHistoryDialogOpen}
+        title="Clear played history?"
+        description="This permanently removes every already-played video from this room. This can't be undone."
+        confirmLabel="Clear history"
+        danger
+        onConfirm={handleClearHistory}
+        onCancel={() => setClearHistoryDialogOpen(false)}
+      />
     </main>
   )
 }

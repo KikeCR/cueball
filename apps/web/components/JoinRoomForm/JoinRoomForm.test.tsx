@@ -2,21 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { JoinRoomFormPageObject } from "../../test/page-objects/JoinRoomFormPageObject"
 
 const joinAsGuestMock = vi.fn()
-let joinError: string | null = null
+const toastErrorMock = vi.fn()
 let authUser: { displayName: string } | null = null
 
 vi.mock("../../context/RoomContext", () => ({
-  useRoom: () => ({ joinAsGuest: joinAsGuestMock, joinError }),
+  useRoom: () => ({ joinAsGuest: joinAsGuestMock }),
 }))
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({ user: authUser }),
 }))
 
+vi.mock("../../context/ToastContext", () => ({
+  useToast: () => ({ error: toastErrorMock, success: vi.fn() }),
+}))
+
 describe("JoinRoomForm", () => {
   beforeEach(() => {
     joinAsGuestMock.mockReset()
-    joinError = null
+    toastErrorMock.mockReset()
     authUser = null
   })
 
@@ -30,10 +34,14 @@ describe("JoinRoomForm", () => {
     expect(joinAsGuestMock).toHaveBeenCalledWith("Riley")
   })
 
-  it("surfaces a join error from context", () => {
-    joinError = "Room not found"
+  it("toasts a join error", async () => {
+    joinAsGuestMock.mockRejectedValue(new Error("Room not found"))
     const form = new JoinRoomFormPageObject()
-    expect(form.errorAlert).toHaveTextContent("Room not found")
+
+    await form.fillName("Riley")
+    await form.submit()
+
+    expect(toastErrorMock).toHaveBeenCalledWith("Room not found")
   })
 
   it("prefills the name for a logged-in user", () => {

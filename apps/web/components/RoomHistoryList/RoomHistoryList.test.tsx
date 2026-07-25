@@ -9,11 +9,17 @@ vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({ token: "user-token" }),
 }))
 
+const toastErrorMock = vi.fn()
+vi.mock("../../context/ToastContext", () => ({
+  useToast: () => ({ error: toastErrorMock, success: vi.fn() }),
+}))
+
 import { api } from "../../api/client"
 
 describe("RoomHistoryList", () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset()
+    toastErrorMock.mockReset()
   })
 
   it("shows a loading state, then the rooms", async () => {
@@ -49,11 +55,10 @@ describe("RoomHistoryList", () => {
     expect(await list.findEmptyMessage()).toBeInTheDocument()
   })
 
-  it("shows an error if the request fails", async () => {
+  it("shows a fallback message and toasts the error if the request fails", async () => {
     vi.mocked(api.get).mockRejectedValue(new Error("Server unavailable"))
     const list = new RoomHistoryListPageObject()
-    expect(await list.findErrorAlert()).toHaveTextContent(
-      "Server unavailable",
-    )
+    expect(await list.findErrorMessage()).toBeInTheDocument()
+    expect(toastErrorMock).toHaveBeenCalledWith("Server unavailable")
   })
 })

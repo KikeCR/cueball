@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AuthContextPageObject } from "../test/page-objects/AuthContextPageObject"
 
 vi.mock("../api/client", () => ({
-  api: { get: vi.fn(), post: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
 }))
 
 import { api } from "../api/client"
@@ -12,6 +12,7 @@ const USER = {
   id: "user-1",
   email: "sam@example.com",
   displayName: "Sam",
+  betaFeaturesEnabled: false,
   createdAt: new Date().toISOString(),
 }
 
@@ -19,6 +20,7 @@ describe("AuthContext", () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.patch).mockReset()
     localStorage.clear()
   })
 
@@ -88,6 +90,27 @@ describe("AuthContext", () => {
     )
     expect(auth.userText).toBe("none")
     expect(localStorage.getItem("cueball:auth")).toBeNull()
+  })
+
+  it("updates settings and reflects the returned user", async () => {
+    vi.mocked(api.post).mockResolvedValue({ user: USER, token: "new-token" })
+    vi.mocked(api.patch).mockResolvedValue({
+      user: { ...USER, betaFeaturesEnabled: true },
+    })
+
+    const auth = new AuthContextPageObject()
+    await waitFor(() => expect(auth.loadingText).toBe("false"))
+    await auth.login()
+    await waitFor(() => expect(auth.userText).toBe("Sam"))
+
+    await auth.enableBeta()
+
+    await waitFor(() => expect(auth.betaText).toBe("true"))
+    expect(api.patch).toHaveBeenCalledWith(
+      "/api/auth/me",
+      { betaFeaturesEnabled: true },
+      "new-token",
+    )
   })
 
   it("logs out and clears the stored token", async () => {

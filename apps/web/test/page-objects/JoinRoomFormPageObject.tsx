@@ -17,10 +17,6 @@ export class JoinRoomFormPageObject {
     return screen.getByRole("button", { name: /join room/i })
   }
 
-  get errorAlert() {
-    return screen.queryByRole("alert")
-  }
-
   async fillName(value: string) {
     await this.user.type(this.nameInput, value)
   }

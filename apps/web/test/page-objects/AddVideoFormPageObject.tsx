@@ -24,8 +24,4 @@ export class AddVideoFormPageObject {
   async submit() {
     await this.user.click(this.submitButton)
   }
-
-  findErrorAlert() {
-    return screen.findByRole("alert")
-  }
 }

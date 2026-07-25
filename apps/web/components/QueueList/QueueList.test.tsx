@@ -297,4 +297,47 @@ describe("QueueList", () => {
 
     expect(queueList.playedHeading).not.toBeInTheDocument()
   })
+
+  it("lets the host clear played history", async () => {
+    const onClearHistory = vi.fn()
+    const item = makeItem({ playedAt: new Date().toISOString() })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onClearHistory,
+    })
+
+    await queueList.clickClearHistory()
+    expect(onClearHistory).toHaveBeenCalled()
+  })
+
+  it("hides the clear-history button from a non-host", () => {
+    const item = makeItem({ playedAt: new Date().toISOString() })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p2",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onClearHistory: vi.fn(),
+    })
+
+    expect(queueList.clearHistoryButton).not.toBeInTheDocument()
+  })
+
+  it("hides the clear-history button when there's no played history", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem()],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onClearHistory: vi.fn(),
+    })
+
+    expect(queueList.clearHistoryButton).not.toBeInTheDocument()
+  })
 })

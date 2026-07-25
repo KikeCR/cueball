@@ -19,6 +19,7 @@ import {
   type ParticipantRemovedPayload,
   type ParticipantWithPresence,
   type PlaylistSyncFailedPayload,
+  type QueueClearResult,
   type QueueItem,
   type Room,
   type RoomJoinResult,
@@ -65,7 +66,6 @@ interface RoomContextValue {
   queue: QueueItem[]
   cast: CastSessionState | null
   self: ParticipantWithPresence | null
-  joinError: string | null
   /** Set when the host removes this participant; cleared on the next successful join. */
   removedReason: string | null
   /** A fresh object each time a YouTube playlist sync fails, so repeated identical failures still notify. */
@@ -76,6 +76,8 @@ interface RoomContextValue {
   removeQueueItem: (queueItemId: string) => Promise<void>
   reorderQueue: (orderedQueueItemIds: string[]) => Promise<void>
   setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
+  clearQueue: () => Promise<QueueClearResult>
+  clearHistory: () => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   renameSelf: (name: string) => Promise<void>
   sendCastCommand: (action: CastCommandAction, seekSeconds?: number) => Promise<void>
@@ -101,7 +103,6 @@ export function RoomProvider({
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [cast, setCast] = useState<CastSessionState | null>(null)
   const [selfId, setSelfId] = useState<string | null>(null)
-  const [joinError, setJoinError] = useState<string | null>(null)
   const [removedReason, setRemovedReason] = useState<string | null>(null)
   const [playlistSyncError, setPlaylistSyncError] = useState<{
     message: string
@@ -181,7 +182,6 @@ export function RoomProvider({
           { roomCode, guestName },
           (result: RoomJoinResult | ActionError) => {
             if ("error" in result) {
-              setJoinError(result.error)
               reject(new Error(result.error))
               return
             }
@@ -191,7 +191,6 @@ export function RoomProvider({
             setQueue(result.queue)
             setCast(result.cast)
             setSelfId(result.participant.id)
-            setJoinError(null)
             setRemovedReason(null)
             resolve()
           },
@@ -238,6 +237,50 @@ export function RoomProvider({
     [],
   )
 
+  const clearQueue = useCallback(
+    () =>
+      new Promise<QueueClearResult>((resolve, reject) => {
+        const socket = socketRef.current
+        if (!socket) {
+          reject(new Error("Not connected"))
+          return
+        }
+        socket.emit(
+          SocketEvents.QueueClear,
+          (result: QueueClearResult | ActionError) => {
+            if ("error" in result) {
+              reject(new Error(result.error))
+              return
+            }
+            resolve(result)
+          },
+        )
+      }),
+    [],
+  )
+
+  const clearHistory = useCallback(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const socket = socketRef.current
+        if (!socket) {
+          reject(new Error("Not connected"))
+          return
+        }
+        socket.emit(
+          SocketEvents.QueueClearHistory,
+          (result: ActionOk | ActionError) => {
+            if ("error" in result) {
+              reject(new Error(result.error))
+              return
+            }
+            resolve()
+          },
+        )
+      }),
+    [],
+  )
+
   const removeParticipant = useCallback(
     (participantId: string) =>
       emitAction(socketRef.current, SocketEvents.ParticipantRemove, {
@@ -274,7 +317,6 @@ export function RoomProvider({
         queue,
         cast,
         self,
-        joinError,
         removedReason,
         playlistSyncError,
         joinAsGuest,
@@ -283,6 +325,8 @@ export function RoomProvider({
         removeQueueItem,
         reorderQueue,
         setQueueItemPlayed,
+        clearQueue,
+        clearHistory,
         removeParticipant,
         renameSelf,
         sendCastCommand,

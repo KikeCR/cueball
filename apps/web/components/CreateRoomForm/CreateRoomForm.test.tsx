@@ -1,3 +1,4 @@
+import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CreateRoomFormPageObject } from "../../test/page-objects/CreateRoomFormPageObject"
 
@@ -11,8 +12,15 @@ vi.mock("../../api/client", () => ({
   api: { post: vi.fn() },
 }))
 
+let authUser: { displayName: string; betaFeaturesEnabled: boolean } | null = null
+
 vi.mock("../../context/AuthContext", () => ({
-  useAuth: () => ({ token: null, user: null }),
+  useAuth: () => ({ token: null, user: authUser }),
+}))
+
+const toastErrorMock = vi.fn()
+vi.mock("../../context/ToastContext", () => ({
+  useToast: () => ({ error: toastErrorMock, success: vi.fn() }),
 }))
 
 import { api } from "../../api/client"
@@ -20,8 +28,10 @@ import { api } from "../../api/client"
 describe("CreateRoomForm", () => {
   beforeEach(() => {
     pushMock.mockClear()
+    toastErrorMock.mockReset()
     vi.mocked(api.post).mockReset()
     localStorage.clear()
+    authUser = null
   })
 
   it("creates a room, stores the participant token, and navigates to it", async () => {
@@ -62,7 +72,13 @@ describe("CreateRoomForm", () => {
     expect(pushMock).toHaveBeenCalledWith("/room/ABC123")
   })
 
-  it("defaults to playlist mode, and sends cast mode once selected", async () => {
+  it("hides the Cast option unless the user has beta features enabled", async () => {
+    const form = new CreateRoomFormPageObject()
+    expect(form.queryCastModeButton()).not.toBeInTheDocument()
+  })
+
+  it("shows and sends cast mode once selected, for a beta-enabled user", async () => {
+    authUser = { displayName: "Sam", betaFeaturesEnabled: true }
     vi.mocked(api.post).mockResolvedValue({
       room: {
         id: "r1",
@@ -89,7 +105,6 @@ describe("CreateRoomForm", () => {
     const form = new CreateRoomFormPageObject()
 
     await form.selectCastMode()
-    await form.fillHostName("Sam")
     await form.submit()
 
     expect(api.post).toHaveBeenCalledWith(
@@ -99,7 +114,7 @@ describe("CreateRoomForm", () => {
     )
   })
 
-  it("shows an error if room creation fails", async () => {
+  it("toasts an error if room creation fails", async () => {
     vi.mocked(api.post).mockRejectedValue(new Error("Server unavailable"))
 
     const form = new CreateRoomFormPageObject()
@@ -107,8 +122,8 @@ describe("CreateRoomForm", () => {
     await form.fillHostName("Sam")
     await form.submit()
 
-    expect(await form.findErrorAlert()).toHaveTextContent(
-      "Server unavailable",
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("Server unavailable"),
     )
     expect(pushMock).not.toHaveBeenCalled()
   })

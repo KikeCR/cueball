@@ -18,7 +18,7 @@ export class RoomHistoryListPageObject {
     return screen.findByText(/no rooms yet/i)
   }
 
-  findErrorAlert() {
-    return screen.findByRole("alert")
+  findErrorMessage() {
+    return screen.findByText(/couldn't load your rooms/i)
   }
 }

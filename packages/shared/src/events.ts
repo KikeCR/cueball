@@ -22,6 +22,8 @@ export const SocketEvents = {
   QueueRemove: "queue:remove",
   QueueReorder: "queue:reorder",
   QueueSetPlayed: "queue:set-played",
+  QueueClear: "queue:clear",
+  QueueClearHistory: "queue:clear-history",
 
   PlaylistSyncFailed: "playlist:sync-failed",
 
@@ -110,6 +112,11 @@ export interface QueueSetPlayedPayload {
   played: boolean
 }
 
+export interface QueueClearResult {
+  clearedCount: number
+  totalCount: number
+}
+
 export interface PlaylistSyncFailedPayload {
   reason: string
 }
@@ -146,6 +153,10 @@ export interface RegisterRequest {
 export interface LoginRequest {
   email: string
   password: string
+}
+
+export interface UpdateUserSettingsRequest {
+  betaFeaturesEnabled: boolean
 }
 
 export interface AuthResponse {

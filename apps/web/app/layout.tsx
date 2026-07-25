@@ -2,6 +2,7 @@ import type { ReactNode } from "react"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "../context/ThemeContext"
 import { AuthProvider } from "../context/AuthContext"
+import { ToastProvider } from "../context/ToastContext"
 import { ThemeToggle } from "../components/ThemeToggle"
 import { AccountMenu } from "../components/AccountMenu"
 import { Logo } from "../components/Logo"
@@ -36,15 +37,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <ThemeProvider>
           <AuthProvider>
-            <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface/80 px-4 backdrop-blur-sm sm:px-6">
-              <Logo />
-              <div className="flex items-center gap-2">
-                <AccountMenu />
-                <ThemeToggle />
-              </div>
-            </header>
-            <div className="flex-1">{children}</div>
-            <Footer />
+            <ToastProvider>
+              <header className="sticky top-0 z-50 flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface/80 px-4 backdrop-blur-sm sm:px-6">
+                <Logo />
+                <div className="flex items-center gap-2">
+                  <AccountMenu />
+                  <ThemeToggle />
+                </div>
+              </header>
+              <div className="flex-1">{children}</div>
+              <Footer />
+            </ToastProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

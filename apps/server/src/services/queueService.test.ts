@@ -12,6 +12,7 @@ vi.mock("./prisma.js", () => {
       findFirst: vi.fn(),
       findMany: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
       update: vi.fn(),
       aggregate: vi.fn(),
     },
@@ -47,9 +48,12 @@ import { touchRoomActivity } from "./roomService.js"
 import {
   addQueueItem,
   castVote,
+  commitQueueClear,
+  commitQueueHistoryClear,
   commitQueueItemPlayed,
   commitQueueItemRemoval,
   commitQueueReorder,
+  findClearableQueueItems,
   findQueueItemForPlayedToggle,
   findRemovableQueueItem,
   isVideoAlreadyQueued,
@@ -666,5 +670,94 @@ describe("commitQueueItemPlayed", () => {
       data: { playedAt: null },
       include: { votes: true },
     })
+  })
+})
+
+describe("findClearableQueueItems", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.findMany).mockReset()
+  })
+
+  it("rejects a non-host requester", async () => {
+    const result = await findClearableQueueItems({
+      roomId: "room-1",
+      isHost: false,
+    })
+
+    expect(result).toEqual({ error: "Only the host can clear the queue" })
+    expect(prisma.queueItem.findMany).not.toHaveBeenCalled()
+  })
+
+  it("returns the room's unplayed items for a host", async () => {
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
+      { id: "item-1", votes: [] },
+      { id: "item-2", votes: [] },
+    ] as never)
+
+    const result = await findClearableQueueItems({
+      roomId: "room-1",
+      isHost: true,
+    })
+
+    expect(prisma.queueItem.findMany).toHaveBeenCalledWith({
+      where: { roomId: "room-1", playedAt: null },
+      include: { votes: true },
+    })
+    expect("items" in result && result.items).toHaveLength(2)
+  })
+})
+
+describe("commitQueueClear", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.deleteMany).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("deletes the given queue items and marks the room active", async () => {
+    await commitQueueClear({ roomId: "room-1", queueItemIds: ["item-1", "item-2"] })
+
+    expect(prisma.queueItem.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["item-1", "item-2"] } },
+    })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+  })
+
+  it("does nothing when given no ids", async () => {
+    await commitQueueClear({ roomId: "room-1", queueItemIds: [] })
+
+    expect(prisma.queueItem.deleteMany).not.toHaveBeenCalled()
+    expect(touchRoomActivity).not.toHaveBeenCalled()
+  })
+})
+
+describe("commitQueueHistoryClear", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.deleteMany).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("rejects a non-host requester", async () => {
+    const result = await commitQueueHistoryClear({
+      roomId: "room-1",
+      isHost: false,
+    })
+
+    expect(result).toEqual({ error: "Only the host can clear played history" })
+    expect(prisma.queueItem.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it("deletes played items and returns the cleared count", async () => {
+    vi.mocked(prisma.queueItem.deleteMany).mockResolvedValue({ count: 3 } as never)
+
+    const result = await commitQueueHistoryClear({
+      roomId: "room-1",
+      isHost: true,
+    })
+
+    expect(prisma.queueItem.deleteMany).toHaveBeenCalledWith({
+      where: { roomId: "room-1", playedAt: { not: null } },
+    })
+    expect(result).toEqual({ clearedCount: 3 })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 })

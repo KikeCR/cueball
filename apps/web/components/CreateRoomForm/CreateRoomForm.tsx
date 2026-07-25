@@ -12,6 +12,7 @@ import {
 } from "@cueball/shared"
 import { api } from "../../api/client"
 import { useAuth } from "../../context/AuthContext"
+import { useToast } from "../../context/ToastContext"
 import { storeParticipantToken } from "../../utils/participantSession"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -20,11 +21,11 @@ import { Label } from "../ui/label"
 export function CreateRoomForm() {
   const router = useRouter()
   const { token, user } = useAuth()
+  const toast = useToast()
   const [hostName, setHostName] = useState("")
   const [roomName, setRoomName] = useState("")
   const [mode, setMode] = useState<RoomMode>("playlist")
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (user) setHostName((current) => current || user.displayName)
@@ -36,7 +37,6 @@ export function CreateRoomForm() {
     if (!trimmedHostName) return
 
     setSubmitting(true)
-    setError(null)
     try {
       const request: CreateRoomRequest = {
         hostName: trimmedHostName,
@@ -51,33 +51,35 @@ export function CreateRoomForm() {
       storeParticipantToken(response.room.code, response.participantToken)
       router.push(`/room/${response.room.code}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create room")
+      toast.error(err instanceof Error ? err.message : "Failed to create room")
       setSubmitting(false)
     }
   }
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-      <div className="flex gap-1 rounded-md bg-surface-hover p-1">
-        <button
-          type="button"
-          onClick={() => setMode("playlist")}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-            mode === "playlist" ? "bg-surface text-text" : "text-muted"
-          }`}
-        >
-          <Youtube className="size-3.5" /> Playlist
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("cast")}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-            mode === "cast" ? "bg-surface text-text" : "text-muted"
-          }`}
-        >
-          <Cast className="size-3.5" /> Cast
-        </button>
-      </div>
+      {user?.betaFeaturesEnabled && (
+        <div className="flex gap-1 rounded-md bg-surface-hover p-1">
+          <button
+            type="button"
+            onClick={() => setMode("playlist")}
+            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+              mode === "playlist" ? "bg-surface text-text" : "text-muted"
+            }`}
+          >
+            <Youtube className="size-3.5" /> Playlist
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("cast")}
+            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+              mode === "cast" ? "bg-surface text-text" : "text-muted"
+            }`}
+          >
+            <Cast className="size-3.5" /> Cast
+          </button>
+        </div>
+      )}
       <Label>
         Your name
         <Input
@@ -95,11 +97,6 @@ export function CreateRoomForm() {
           maxLength={MAX_ROOM_NAME_LENGTH}
         />
       </Label>
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
       <Button type="submit" disabled={submitting}>
         {submitting && <Loader2 className="size-4 animate-spin" />}
         {submitting ? "Creating…" : "Create room"}
