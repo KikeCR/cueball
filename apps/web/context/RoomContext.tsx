@@ -58,6 +58,8 @@ function emitAction(
 interface RoomContextValue {
   connected: boolean
   reconnecting: boolean
+  /** Escape hatch for cast-specific socket events not covered by the actions below. */
+  socket: Socket | null
   room: Room | null
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
@@ -89,6 +91,7 @@ export function RoomProvider({
   children: ReactNode
 }) {
   const socketRef = useRef<Socket | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
   const [connected, setConnected] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [room, setRoom] = useState<Room | null>(null)
@@ -120,6 +123,7 @@ export function RoomProvider({
       auth: { ...(token ? { token } : {}), ...(userToken ? { userToken } : {}) },
     })
     socketRef.current = socket
+    setSocket(socket)
 
     socket.on("connect", () => setConnected(true))
     socket.on("disconnect", () => setConnected(false))
@@ -160,6 +164,7 @@ export function RoomProvider({
       if (staleTimer) window.clearTimeout(staleTimer)
       socket.disconnect()
       socketRef.current = null
+      setSocket(null)
     }
   }, [roomCode])
 
@@ -263,6 +268,7 @@ export function RoomProvider({
       value={{
         connected,
         reconnecting,
+        socket,
         room,
         participants,
         queue,
