@@ -1,6 +1,6 @@
 "use client"
 
-import { Cast, Loader2, Pause, Play, SkipForward } from "lucide-react"
+import { Cast, Loader2, Pause, Play, SkipForward, X } from "lucide-react"
 import { useRoom } from "../../context/RoomContext"
 import { useCastSender } from "../../hooks/useCastSender"
 import { Badge } from "../ui/badge"
@@ -10,9 +10,17 @@ interface CastControlsCardProps {
   isHost: boolean
 }
 
+function formatTime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds))
+  const mins = Math.floor(total / 60)
+  const secs = total % 60
+  return `${mins}:${secs.toString().padStart(2, "0")}`
+}
+
 export function CastControlsCard({ isHost }: CastControlsCardProps) {
   const { cast, queue, sendCastCommand } = useRoom()
-  const { supported, status, deviceName, error, connect } = useCastSender()
+  const { supported, status, deviceName, error, connect, disconnect } =
+    useCastSender()
   const nowPlaying =
     queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
 
@@ -88,6 +96,18 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
           >
             <SkipForward className="size-4" />
           </Button>
+          {isHost && (
+            <Button
+              type="button"
+              variant="icon"
+              size="sm"
+              className="w-9 px-0"
+              aria-label="Disconnect"
+              onClick={disconnect}
+            >
+              <X className="size-4" />
+            </Button>
+          )}
         </div>
       </div>
       {nowPlaying && (
@@ -100,6 +120,27 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
             />
           )}
           <p className="truncate text-sm font-semibold">{nowPlaying.title}</p>
+        </div>
+      )}
+      {cast.durationSeconds != null && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs tabular-nums text-muted">
+            {formatTime(cast.currentTimeSeconds ?? 0)}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={cast.durationSeconds}
+            value={cast.currentTimeSeconds ?? 0}
+            onChange={(event) =>
+              void sendCastCommand("seek", Number(event.target.value))
+            }
+            aria-label="Seek"
+            className="h-1.5 flex-1 accent-primary"
+          />
+          <span className="text-xs tabular-nums text-muted">
+            {formatTime(cast.durationSeconds)}
+          </span>
         </div>
       )}
     </div>

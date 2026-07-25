@@ -4,12 +4,15 @@ import { CastControlsCardPageObject } from "../../test/page-objects/CastControls
 
 const sendCastCommandMock = vi.fn()
 const connectMock = vi.fn()
+const disconnectMock = vi.fn()
 
 let castState: {
   connected: boolean
   deviceName: string | null
   isPlaying: boolean
   currentQueueItemId: string | null
+  currentTimeSeconds: number | null
+  durationSeconds: number | null
 } | null = null
 let queueState: QueueItem[] = []
 let castSenderState: {
@@ -27,7 +30,11 @@ vi.mock("../../context/RoomContext", () => ({
 }))
 
 vi.mock("../../hooks/useCastSender", () => ({
-  useCastSender: () => ({ ...castSenderState, connect: connectMock }),
+  useCastSender: () => ({
+    ...castSenderState,
+    connect: connectMock,
+    disconnect: disconnectMock,
+  }),
 }))
 
 function makeQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
@@ -50,6 +57,7 @@ describe("CastControlsCard", () => {
   beforeEach(() => {
     sendCastCommandMock.mockReset()
     connectMock.mockReset()
+    disconnectMock.mockReset()
     castState = null
     queueState = []
     castSenderState = { supported: true, status: "disconnected", deviceName: null }
@@ -83,6 +91,8 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: false,
       currentQueueItemId: null,
+      currentTimeSeconds: null,
+      durationSeconds: null,
     }
     const card = new CastControlsCardPageObject({ isHost: false })
 
@@ -101,6 +111,8 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: true,
       currentQueueItemId: null,
+      currentTimeSeconds: null,
+      durationSeconds: null,
     }
     const card = new CastControlsCardPageObject({ isHost: true })
 
@@ -114,6 +126,8 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: true,
       currentQueueItemId: "item-1",
+      currentTimeSeconds: null,
+      durationSeconds: null,
     }
     queueState = [makeQueueItem()]
     const card = new CastControlsCardPageObject({ isHost: true })
@@ -121,5 +135,65 @@ describe("CastControlsCard", () => {
     expect(
       await card.findText("Never Gonna Give You Up"),
     ).toBeInTheDocument()
+  })
+
+  it("shows a seek slider once duration is known, and sends seek commands", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: true,
+      currentQueueItemId: null,
+      currentTimeSeconds: 30,
+      durationSeconds: 180,
+    }
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    const slider = card.seekSlider
+    expect(slider).toHaveAttribute("max", "180")
+    expect(slider).toHaveAttribute("value", "30")
+
+    card.seekTo(90)
+    expect(sendCastCommandMock).toHaveBeenCalledWith("seek", 90)
+  })
+
+  it("hides the seek slider until a duration is available", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+      currentTimeSeconds: null,
+      durationSeconds: null,
+    }
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    expect(card.querySeekSlider()).not.toBeInTheDocument()
+  })
+
+  it("lets the host disconnect, and hides that control from other participants", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+      currentTimeSeconds: null,
+      durationSeconds: null,
+    }
+    const hostCard = new CastControlsCardPageObject({ isHost: true })
+    await hostCard.clickDisconnect()
+    expect(disconnectMock).toHaveBeenCalled()
+  })
+
+  it("does not show a disconnect control to non-host participants", () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+      currentTimeSeconds: null,
+      durationSeconds: null,
+    }
+    const guestCard = new CastControlsCardPageObject({ isHost: false })
+    expect(guestCard.queryDisconnectButton()).not.toBeInTheDocument()
   })
 })

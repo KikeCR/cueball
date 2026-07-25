@@ -18,6 +18,8 @@ export interface CastSessionState {
   casterParticipantId: string | null
   isPlaying: boolean
   currentQueueItemId: string | null
+  currentTimeSeconds: number | null
+  durationSeconds: number | null
 }
 
 export interface Participant {

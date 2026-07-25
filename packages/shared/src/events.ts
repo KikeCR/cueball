@@ -128,6 +128,8 @@ export interface CastCommandPayload {
 export interface CastStateReportPayload {
   isPlaying: boolean
   currentQueueItemId: string | null
+  currentTimeSeconds: number | null
+  durationSeconds: number | null
 }
 
 export interface CastAdvanceResult {
