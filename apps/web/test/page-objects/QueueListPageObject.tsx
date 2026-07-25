@@ -11,6 +11,7 @@ interface QueueListProps {
   onRemove: (queueItemId: string) => void
   onReorder?: (orderedQueueItemIds: string[]) => void
   onSetPlayed?: (queueItemId: string, played: boolean) => void
+  onClearHistory?: () => void
   manualOrderActive?: boolean
 }
 
@@ -59,6 +60,16 @@ export class QueueListPageObject {
 
   get playedHeading() {
     return screen.queryByText("Played videos")
+  }
+
+  get clearHistoryButton() {
+    return screen.queryByRole("button", { name: /clear history/i })
+  }
+
+  async clickClearHistory() {
+    const button = this.clearHistoryButton
+    if (!button) throw new Error("Clear history button is not rendered")
+    await this.user.click(button)
   }
 
   async clickUpvote() {

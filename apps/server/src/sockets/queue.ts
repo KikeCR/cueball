@@ -5,6 +5,7 @@ import {
   type ActionError,
   type ActionOk,
   type QueueAddPayload,
+  type QueueClearResult,
   type QueueRemovePayload,
   type QueueReorderPayload,
   type QueueSetPlayedPayload,
@@ -13,9 +14,12 @@ import {
 import {
   addQueueItem,
   castVote,
+  commitQueueClear,
+  commitQueueHistoryClear,
   commitQueueItemPlayed,
   commitQueueItemRemoval,
   commitQueueReorder,
+  findClearableQueueItems,
   findQueueItemForPlayedToggle,
   findRemovableQueueItem,
   isVideoAlreadyQueued,
@@ -360,5 +364,107 @@ export function registerQueueHandlers(io: Server): void {
         })()
       },
     )
+
+    socket.on(
+      SocketEvents.QueueClear,
+      (ack?: (result: QueueClearResult | ActionError) => void) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room before clearing the queue" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const found = await findClearableQueueItems({
+            roomId,
+            isHost: participant.isHost,
+          })
+          if ("error" in found) {
+            ack?.({ error: found.error })
+            return
+          }
+
+          const totalCount = found.items.length
+          if (totalCount === 0) {
+            ack?.({ clearedCount: 0, totalCount: 0 })
+            return
+          }
+
+          // Clearing is a bulk op: rather than abort everything over one
+          // flaky YouTube call (like single-item remove does), attempt
+          // every real-playlist removal and only keep whichever items
+          // fail in the queue — so the app never claims a video is gone
+          // when it's still sitting in the actual playlist.
+          let clearableIds = found.items.map((item) => item.id)
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          if (room?.youtubePlaylistId) {
+            const withPlaylistItem = found.items.filter(
+              (item) => item.youtubePlaylistItemId,
+            )
+            const results = await Promise.allSettled(
+              withPlaylistItem.map((item) =>
+                removeVideoFromPlaylist(room, item.youtubePlaylistItemId!),
+              ),
+            )
+            const failedIds = new Set<string>()
+            results.forEach((result, index) => {
+              const item = withPlaylistItem[index]
+              if (result.status === "rejected" && item) {
+                failedIds.add(item.id)
+                console.error(
+                  `Failed to remove queue item ${item.id} from YouTube playlist for room ${roomId}`,
+                  result.reason,
+                )
+              }
+            })
+            clearableIds = found.items
+              .filter((item) => !failedIds.has(item.id))
+              .map((item) => item.id)
+          }
+
+          await commitQueueClear({ roomId, queueItemIds: clearableIds })
+          ack?.({ clearedCount: clearableIds.length, totalCount })
+          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    socket.on(SocketEvents.QueueClearHistory, (ack?: Ack) => {
+      void (async () => {
+        const { participantId, roomId } = socket.data
+        if (!participantId || !roomId) {
+          ack?.({ error: "Join a room before clearing history" })
+          return
+        }
+
+        const participant = await prisma.participant.findUnique({
+          where: { id: participantId },
+        })
+        if (!participant) {
+          ack?.({ error: "Participant not found" })
+          return
+        }
+
+        const result = await commitQueueHistoryClear({
+          roomId,
+          isHost: participant.isHost,
+        })
+        if ("error" in result) {
+          ack?.({ error: result.error })
+          return
+        }
+
+        ack?.({ ok: true })
+        await broadcastRoomState(io, roomId)
+      })()
+    })
   })
 }

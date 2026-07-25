@@ -43,6 +43,25 @@ export async function getUserById(userId: string): Promise<User | null> {
   return prisma.user.findUnique({ where: { id: userId } })
 }
 
+export async function updateUserSettings(
+  userId: string,
+  settings: { betaFeaturesEnabled: boolean },
+): Promise<User> {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { betaFeaturesEnabled: settings.betaFeaturesEnabled },
+  })
+}
+
+/** Server-side source of truth for beta-gated features (e.g. Cast-mode rooms) — never trust a client-supplied flag alone. */
+export async function userHasBetaFeaturesEnabled(
+  userId: string | undefined,
+): Promise<boolean> {
+  if (!userId) return false
+  const user = await getUserById(userId)
+  return user?.betaFeaturesEnabled ?? false
+}
+
 /** Signs in an existing account by email, or creates a passwordless one for a first-time Google login. */
 export async function findOrCreateGoogleUser(params: {
   email: string

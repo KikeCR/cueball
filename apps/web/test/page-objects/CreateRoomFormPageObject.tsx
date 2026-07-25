@@ -25,6 +25,10 @@ export class CreateRoomFormPageObject {
     return screen.getByRole("button", { name: "Cast" })
   }
 
+  queryCastModeButton() {
+    return screen.queryByRole("button", { name: "Cast" })
+  }
+
   async fillHostName(value: string) {
     await this.user.type(this.hostNameInput, value)
   }
@@ -35,9 +39,5 @@ export class CreateRoomFormPageObject {
 
   async submit() {
     await this.user.click(this.submitButton)
-  }
-
-  findErrorAlert() {
-    return screen.findByRole("alert")
   }
 }

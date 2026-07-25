@@ -5,12 +5,15 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { useAuth } from "../../context/AuthContext"
+import { useToast } from "../../context/ToastContext"
 import { LoginForm } from "../../components/LoginForm"
 import { RegisterForm } from "../../components/RegisterForm"
 import { GoogleAuthButton } from "../../components/GoogleAuthButton"
 import { RoomHistoryList } from "../../components/RoomHistoryList"
 import { Card } from "../../components/ui/card"
 import { Button } from "../../components/ui/button"
+import { Spinner } from "../../components/ui/spinner"
+import { Switch } from "../../components/ui/switch"
 
 type Tab = "login" | "register"
 
@@ -28,12 +31,11 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
  */
 function GoogleCallbackHandler({
   onExchangingChange,
-  onError,
 }: {
   onExchangingChange: (exchanging: boolean) => void
-  onError: (message: string) => void
 }) {
   const { applyToken } = useAuth()
+  const toast = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -43,12 +45,12 @@ function GoogleCallbackHandler({
     if (!token && !error) return
 
     if (error) {
-      onError(GOOGLE_ERROR_MESSAGES[error] ?? "Google sign-in failed.")
+      toast.error(GOOGLE_ERROR_MESSAGES[error] ?? "Google sign-in failed.")
     }
     if (token) {
       onExchangingChange(true)
       applyToken(token)
-        .catch(() => onError("Google sign-in failed. Please try again."))
+        .catch(() => toast.error("Google sign-in failed. Please try again."))
         .finally(() => onExchangingChange(false))
     }
     router.replace("/account")
@@ -59,22 +61,40 @@ function GoogleCallbackHandler({
 }
 
 export default function AccountPage() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading, logout, updateSettings } = useAuth()
+  const toast = useToast()
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("login")
   const [exchangingToken, setExchangingToken] = useState(false)
-  const [googleError, setGoogleError] = useState<string | null>(null)
+
+  const handleToggleBeta = async (checked: boolean) => {
+    try {
+      await updateSettings({ betaFeaturesEnabled: checked })
+      toast.success("Settings saved")
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update settings",
+      )
+    }
+  }
 
   const callbackHandler = (
     <Suspense fallback={null}>
-      <GoogleCallbackHandler
-        onExchangingChange={setExchangingToken}
-        onError={setGoogleError}
-      />
+      <GoogleCallbackHandler onExchangingChange={setExchangingToken} />
     </Suspense>
   )
 
-  if (loading || exchangingToken) return callbackHandler
+  if (loading || exchangingToken) {
+    return (
+      <main className="flex min-h-[50vh] flex-col items-center justify-center gap-3 px-4 text-center">
+        {callbackHandler}
+        <Spinner className="size-6 text-primary" />
+        <p className="text-sm font-semibold text-muted">
+          {exchangingToken ? "Signing you in…" : "Loading…"}
+        </p>
+      </main>
+    )
+  }
 
   if (!user) {
     return (
@@ -107,11 +127,6 @@ export default function AccountPage() {
               Create account
             </button>
           </div>
-          {googleError && (
-            <p role="alert" className="text-sm text-danger">
-              {googleError}
-            </p>
-          )}
           {tab === "login" ? (
             <LoginForm onSuccess={() => router.push("/account")} />
           ) : (
@@ -144,6 +159,25 @@ export default function AccountPage() {
           <Button variant="ghost" onClick={logout} className="mt-2 self-start">
             Sign out
           </Button>
+        </Card>
+
+        <Card className="flex flex-col gap-3">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted">
+            Beta features
+          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">Cast to TV (beta)</p>
+              <p className="text-xs text-muted">
+                Adds a Chromecast room mode with shared playback controls.
+              </p>
+            </div>
+            <Switch
+              checked={user.betaFeaturesEnabled}
+              onChange={handleToggleBeta}
+              label="Cast to TV (beta)"
+            />
+          </div>
         </Card>
 
         <Card className="flex flex-col gap-3">

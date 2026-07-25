@@ -6,29 +6,30 @@ import { Loader2 } from "lucide-react"
 import type { RoomHistoryEntry, RoomHistoryResponse } from "@cueball/shared"
 import { api } from "../../api/client"
 import { useAuth } from "../../context/AuthContext"
+import { useToast } from "../../context/ToastContext"
 import { Badge } from "../ui/badge"
 
 export function RoomHistoryList() {
   const { token } = useAuth()
+  const toast = useToast()
   const [rooms, setRooms] = useState<RoomHistoryEntry[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     if (!token) return
     api
       .get<RoomHistoryResponse>("/api/auth/me/rooms", token)
       .then((data) => setRooms(data.rooms))
-      .catch((err) =>
-        setError(err instanceof Error ? err.message : "Failed to load rooms"),
-      )
+      .catch((err) => {
+        setFailed(true)
+        toast.error(err instanceof Error ? err.message : "Failed to load rooms")
+      })
+    // `toast` deliberately omitted: its wrapper object is a new reference
+    // on every toast anywhere in the app, which would refetch on each one.
   }, [token])
 
-  if (error) {
-    return (
-      <p role="alert" className="text-sm text-danger">
-        {error}
-      </p>
-    )
+  if (failed) {
+    return <p className="text-sm text-muted">Couldn&apos;t load your rooms.</p>
   }
 
   if (!rooms) {

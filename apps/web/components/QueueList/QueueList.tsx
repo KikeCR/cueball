@@ -12,9 +12,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Check, ChevronDown, ChevronUp, GripVertical, Undo2, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, GripVertical, Trash2, Undo2, X } from "lucide-react"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { cn } from "../../utils/cn"
+import { Button } from "../ui/button"
 
 interface QueueListProps {
   queue: QueueItem[]
@@ -24,6 +25,7 @@ interface QueueListProps {
   onRemove: (queueItemId: string) => void
   onReorder?: (orderedQueueItemIds: string[]) => void
   onSetPlayed?: (queueItemId: string, played: boolean) => void
+  onClearHistory?: () => void
   /** True once the host has manually reordered the queue. */
   manualOrderActive?: boolean
 }
@@ -36,6 +38,7 @@ export function QueueList({
   onRemove,
   onReorder,
   onSetPlayed,
+  onClearHistory,
   manualOrderActive = false,
 }: QueueListProps) {
   const sensors = useSensors(
@@ -205,9 +208,21 @@ export function QueueList({
 
       {played.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-            Played videos
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+              Played videos
+            </h3>
+            {self?.isHost && onClearHistory && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onClearHistory}
+              >
+                <Trash2 className="size-3.5" /> Clear history
+              </Button>
+            )}
+          </div>
           <ol className="flex flex-col gap-2 opacity-60">
             {played.map((item) => {
               const addedBy = participants.find(

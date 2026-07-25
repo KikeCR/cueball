@@ -14,6 +14,10 @@ model User {
   displayName  String
   createdAt    DateTime @default(now())
 
+  // Gates experimental features (currently: Cast-to-TV room mode) behind an
+  // explicit per-account opt-in.
+  betaFeaturesEnabled Boolean @default(false)
+
   hostedRooms  Room[]        @relation("RoomHost")
   participants Participant[]
 

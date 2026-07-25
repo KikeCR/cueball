@@ -8,6 +8,7 @@ import {
   type CastCommandPayload,
 } from "@cueball/shared"
 import { useRoom } from "../context/RoomContext"
+import { useToast } from "../context/ToastContext"
 
 const CAST_SENDER_SCRIPT_SRC =
   "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js"
@@ -27,8 +28,6 @@ interface UseCastSenderResult {
   supported: boolean
   status: CastConnectionStatus
   deviceName: string | null
-  /** Set when the last connect attempt failed, so the reason is visible instead of just silently reverting to disconnected. */
-  error: string | null
   connect: () => Promise<void>
   disconnect: () => void
 }
@@ -60,10 +59,14 @@ function describeCastErrorCode(code: string): string {
  */
 export function useCastSender(): UseCastSenderResult {
   const { socket, room, self, cast, queue } = useRoom()
+  // Destructured because useToast()'s returned object is a fresh reference
+  // on every toast anywhere in the app (its provider re-renders when the
+  // toast list changes) — the individual functions are stable, the wrapper
+  // isn't, and several effects below depend on these identities.
+  const { success: toastSuccess, error: toastError } = useToast()
   const [supported, setSupported] = useState(false)
   const [status, setStatus] = useState<CastConnectionStatus>("disconnected")
   const [deviceName, setDeviceName] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const playerRef = useRef<cast.framework.RemotePlayer | null>(null)
   const controllerRef = useRef<cast.framework.RemotePlayerController | null>(
     null,
@@ -92,10 +95,10 @@ export function useCastSender(): UseCastSenderResult {
     (name: string) => {
       setDeviceName(name)
       setStatus("connected")
-      setError(null)
+      toastSuccess(`Connected to ${name}`)
       socket?.emit(SocketEvents.CastSessionStarted, { deviceName: name }, () => {})
     },
-    [socket],
+    [socket, toastSuccess],
   )
 
   const advance = useCallback(() => {
@@ -276,12 +279,11 @@ export function useCastSender(): UseCastSenderResult {
   const connect = useCallback(async () => {
     if (!supported || !socket || !window.cast?.framework) return
     setStatus("connecting")
-    setError(null)
     try {
       const errorCode = await window.cast.framework.CastContext.getInstance().requestSession()
       if (errorCode) {
         setStatus("disconnected")
-        setError(describeCastErrorCode(errorCode))
+        toastError(describeCastErrorCode(errorCode))
         return
       }
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession()
@@ -289,20 +291,21 @@ export function useCastSender(): UseCastSenderResult {
       announceSessionStarted(name)
     } catch (err) {
       setStatus("disconnected")
-      setError(
+      toastError(
         describeCastErrorCode(
           typeof err === "string" ? err : String((err as { code?: string })?.code ?? err),
         ),
       )
     }
-  }, [supported, socket, announceSessionStarted])
+  }, [supported, socket, announceSessionStarted, toastError])
 
   const disconnect = useCallback(() => {
     window.cast?.framework.CastContext.getInstance().endCurrentSession(true)
     setStatus("disconnected")
     setDeviceName(null)
+    toastSuccess("Disconnected from TV")
     socket?.emit(SocketEvents.CastSessionEnded, () => {})
-  }, [socket])
+  }, [socket, toastSuccess])
 
-  return { supported, status, deviceName, error, connect, disconnect }
+  return { supported, status, deviceName, connect, disconnect }
 }

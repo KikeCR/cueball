@@ -11,6 +11,7 @@ const buttonVariants = cva(
         ghost:
           "bg-transparent border border-border text-text hover:bg-surface-hover",
         icon: "bg-transparent border border-border text-muted hover:bg-surface-hover",
+        danger: "bg-danger text-white hover:bg-danger/90",
       },
       size: {
         default: "h-11 px-4 text-sm",

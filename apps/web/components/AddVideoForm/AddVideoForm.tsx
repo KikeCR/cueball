@@ -3,14 +3,15 @@
 import { useState, type FormEvent } from "react"
 import { Loader2, Plus } from "lucide-react"
 import { useRoom } from "../../context/RoomContext"
+import { useToast } from "../../context/ToastContext"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 
 export function AddVideoForm() {
   const { addToQueue } = useRoom()
+  const toast = useToast()
   const [youtubeUrl, setYoutubeUrl] = useState("")
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -18,12 +19,12 @@ export function AddVideoForm() {
     if (!trimmedUrl) return
 
     setSubmitting(true)
-    setError(null)
     try {
       await addToQueue(trimmedUrl)
       setYoutubeUrl("")
+      toast.success("Added to queue")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add video")
+      toast.error(err instanceof Error ? err.message : "Failed to add video")
     } finally {
       setSubmitting(false)
     }
@@ -54,11 +55,6 @@ export function AddVideoForm() {
           </span>
         </Button>
       </div>
-      {error && (
-        <p role="alert" className="text-sm text-danger">
-          {error}
-        </p>
-      )}
     </form>
   )
 }

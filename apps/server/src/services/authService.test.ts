@@ -5,6 +5,7 @@ vi.mock("./prisma.js", () => ({
     user: {
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
   },
 }))
@@ -24,6 +25,8 @@ import {
   getUserById,
   loginUser,
   registerUser,
+  updateUserSettings,
+  userHasBetaFeaturesEnabled,
 } from "./authService.js"
 
 const EXISTING_USER = {
@@ -31,12 +34,14 @@ const EXISTING_USER = {
   email: "sam@example.com",
   passwordHash: "hashed",
   displayName: "Sam",
+  betaFeaturesEnabled: false,
   createdAt: new Date(),
 }
 
 beforeEach(() => {
   vi.mocked(prisma.user.findUnique).mockReset()
   vi.mocked(prisma.user.create).mockReset()
+  vi.mocked(prisma.user.update).mockReset()
   vi.mocked(bcrypt.hash).mockReset()
   vi.mocked(bcrypt.compare).mockReset()
 })
@@ -142,5 +147,42 @@ describe("findOrCreateGoogleUser", () => {
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: { email: "new@example.com", displayName: "New Person" },
     })
+  })
+})
+
+describe("updateUserSettings", () => {
+  it("updates the beta features flag", async () => {
+    vi.mocked(prisma.user.update).mockResolvedValue({
+      ...EXISTING_USER,
+      betaFeaturesEnabled: true,
+    } as never)
+
+    const user = await updateUserSettings("user-1", { betaFeaturesEnabled: true })
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { betaFeaturesEnabled: true },
+    })
+    expect(user.betaFeaturesEnabled).toBe(true)
+  })
+})
+
+describe("userHasBetaFeaturesEnabled", () => {
+  it("returns false when there's no userId", async () => {
+    expect(await userHasBetaFeaturesEnabled(undefined)).toBe(false)
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+  })
+
+  it("returns false when the user doesn't exist", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+    expect(await userHasBetaFeaturesEnabled("missing")).toBe(false)
+  })
+
+  it("returns the user's flag when they exist", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      ...EXISTING_USER,
+      betaFeaturesEnabled: true,
+    } as never)
+    expect(await userHasBetaFeaturesEnabled("user-1")).toBe(true)
   })
 })

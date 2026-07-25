@@ -294,3 +294,57 @@ export async function commitQueueReorder(params: {
   ])
   await touchRoomActivity(params.roomId)
 }
+
+export type FindClearableQueueItemsResult =
+  { items: QueueItemWithVotes[] } | { error: string }
+
+/**
+ * Only the host may clear the queue. Returns the room's current unplayed
+ * items without deleting anything yet, so the caller can attempt the
+ * matching real-playlist removals first (playlist-mode rooms) and only
+ * commit deletions for the items that actually succeeded there.
+ */
+export async function findClearableQueueItems(params: {
+  roomId: string
+  isHost: boolean
+}): Promise<FindClearableQueueItemsResult> {
+  if (!params.isHost) {
+    return { error: "Only the host can clear the queue" }
+  }
+  const items = await prisma.queueItem.findMany({
+    where: { roomId: params.roomId, playedAt: null },
+    include: { votes: true },
+  })
+  return { items }
+}
+
+/** Deletes the given (already confirmed) queue items — a subset of findClearableQueueItems's result if any failed to clear from the real playlist. */
+export async function commitQueueClear(params: {
+  roomId: string
+  queueItemIds: string[]
+}): Promise<void> {
+  if (params.queueItemIds.length === 0) return
+  await prisma.queueItem.deleteMany({
+    where: { id: { in: params.queueItemIds } },
+  })
+  await touchRoomActivity(params.roomId)
+}
+
+/**
+ * Clears played history. No real-playlist sync needed — a played item's
+ * youtubePlaylistItemId is already cleared when it was marked played, so
+ * history never references anything still on the real playlist.
+ */
+export async function commitQueueHistoryClear(params: {
+  roomId: string
+  isHost: boolean
+}): Promise<{ clearedCount: number } | { error: string }> {
+  if (!params.isHost) {
+    return { error: "Only the host can clear played history" }
+  }
+  const result = await prisma.queueItem.deleteMany({
+    where: { roomId: params.roomId, playedAt: { not: null } },
+  })
+  await touchRoomActivity(params.roomId)
+  return { clearedCount: result.count }
+}

@@ -9,6 +9,7 @@ import {
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
 import { optionalAuth } from "../middleware/auth.js"
+import { userHasBetaFeaturesEnabled } from "../services/authService.js"
 import { createRoomWithHost, getRoomByCode } from "../services/roomService.js"
 import { serializeParticipant, serializeRoom } from "../services/serializers.js"
 import { signParticipantToken } from "../services/tokens.js"
@@ -37,6 +38,16 @@ roomsRouter.post(
     const roomName = readTrimmedString(body.roomName, MAX_ROOM_NAME_LENGTH)
     const mode: RoomMode | undefined =
       body.mode === "cast" || body.mode === "playlist" ? body.mode : undefined
+
+    // Cast mode is a beta feature gated per-account — the client hides the
+    // option unless it's enabled, but that's UX only, so re-check here
+    // rather than trust a client-supplied mode.
+    if (mode === "cast" && !(await userHasBetaFeaturesEnabled(req.userId))) {
+      res.status(403).json({
+        error: "Cast mode requires enabling beta features in your account",
+      })
+      return
+    }
 
     const { room, participant } = await createRoomWithHost({
       hostName,

@@ -1,6 +1,8 @@
 "use client"
 
+import { useState } from "react"
 import { Button } from "../ui/button"
+import { Spinner } from "../ui/spinner"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
 
@@ -28,13 +30,21 @@ function GoogleLogo() {
 }
 
 export function GoogleAuthButton() {
+  const [redirecting, setRedirecting] = useState(false)
+
   const handleClick = () => {
+    setRedirecting(true)
     window.location.href = `${API_URL}/api/auth/google/start`
   }
 
   return (
-    <Button type="button" variant="ghost" onClick={handleClick}>
-      <GoogleLogo />
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={handleClick}
+      disabled={redirecting}
+    >
+      {redirecting ? <Spinner /> : <GoogleLogo />}
       Continue with Google
     </Button>
   )
