@@ -37,6 +37,9 @@ export function PlaylistShare({ playlistId }: PlaylistShareProps) {
         <p className="text-sm text-muted">
           Live on YouTube. Anyone can open the playlist directly.
         </p>
+        <p className="text-xs text-muted">
+          On iPhone/iPad, open it in the YouTube app to AirPlay to a TV.
+        </p>
         <a
           href={url}
           target="_blank"

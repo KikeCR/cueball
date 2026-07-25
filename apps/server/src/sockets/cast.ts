@@ -52,6 +52,8 @@ export function registerCastHandlers(io: Server): void {
             casterParticipantId: participantId,
             isPlaying: false,
             currentQueueItemId: null,
+            currentTimeSeconds: null,
+            durationSeconds: null,
           }
           await setCastState(roomId, state)
           ack?.({ ok: true })
@@ -128,6 +130,8 @@ export function registerCastHandlers(io: Server): void {
             ...current,
             isPlaying: payload.isPlaying,
             currentQueueItemId: payload.currentQueueItemId,
+            currentTimeSeconds: payload.currentTimeSeconds,
+            durationSeconds: payload.durationSeconds,
           })
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
@@ -181,6 +185,8 @@ export function registerCastHandlers(io: Server): void {
             ...current,
             currentQueueItemId: next?.id ?? null,
             isPlaying: Boolean(next),
+            currentTimeSeconds: null,
+            durationSeconds: null,
           })
         }
 

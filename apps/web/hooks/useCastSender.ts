@@ -85,6 +85,19 @@ export function useCastSender(): UseCastSenderResult {
     void session.loadMedia(request)
   }, [])
 
+  // Shared by a fresh connect() and by auto-resuming a session that
+  // survived a page refresh (see resumeSavedSession below) — both land in
+  // the same "tell the server a session is live" place.
+  const announceSessionStarted = useCallback(
+    (name: string) => {
+      setDeviceName(name)
+      setStatus("connected")
+      setError(null)
+      socket?.emit(SocketEvents.CastSessionStarted, { deviceName: name }, () => {})
+    },
+    [socket],
+  )
+
   const advance = useCallback(() => {
     if (!socket || advancingRef.current) return
     advancingRef.current = true
@@ -144,6 +157,9 @@ export function useCastSender(): UseCastSenderResult {
     context.setOptions({
       receiverApplicationId: YOUTUBE_RECEIVER_APP_ID,
       autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+      // Lets the SDK silently reattach to a still-live session after a page
+      // refresh, instead of the host having to reconnect from scratch.
+      resumeSavedSession: true,
     })
 
     const player = new window.cast.framework.RemotePlayer()
@@ -173,6 +189,8 @@ export function useCastSender(): UseCastSenderResult {
       socket.emit(SocketEvents.CastStateReport, {
         isPlaying: player.playerState === chrome.cast.media.PlayerState.PLAYING,
         currentQueueItemId: currentQueueItemIdRef.current,
+        currentTimeSeconds: player.currentTime,
+        durationSeconds: player.duration,
       })
     }
 
@@ -185,7 +203,30 @@ export function useCastSender(): UseCastSenderResult {
       handlePlayerStateChanged,
     )
 
+    // Play/pause changes report immediately via the listener above; this
+    // just keeps the scrubber ticking forward in between those events.
+    const progressInterval = window.setInterval(() => {
+      if (!socket || !player.isConnected || !player.isMediaLoaded) return
+      socket.emit(SocketEvents.CastStateReport, {
+        isPlaying: player.playerState === chrome.cast.media.PlayerState.PLAYING,
+        currentQueueItemId: currentQueueItemIdRef.current,
+        currentTimeSeconds: player.currentTime,
+        durationSeconds: player.duration,
+      })
+    }, 1000)
+
+    // A page refresh always drops the old socket for real (the server has
+    // no way to tell "host reloaded" from "host left"), but the Cast SDK
+    // itself may have silently reattached to the still-live session via
+    // resumeSavedSession above — if so, re-announce it so the server's
+    // view of the room catches back up.
+    if (player.isConnected) {
+      const name = context.getCurrentSession()?.getCastDevice().friendlyName ?? "TV"
+      announceSessionStarted(name)
+    }
+
     return () => {
+      window.clearInterval(progressInterval)
       controller.removeEventListener(
         window.cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
         handleConnectedChanged,
@@ -195,7 +236,7 @@ export function useCastSender(): UseCastSenderResult {
         handlePlayerStateChanged,
       )
     }
-  }, [supported, isHostCasting, socket, advance])
+  }, [supported, isHostCasting, socket, advance, announceSessionStarted])
 
   // Relayed commands from any participant land here; only the browser
   // actually holding the live session (this one, once connected) acts.
@@ -245,9 +286,7 @@ export function useCastSender(): UseCastSenderResult {
       }
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession()
       const name = session?.getCastDevice().friendlyName ?? "TV"
-      setDeviceName(name)
-      setStatus("connected")
-      socket.emit(SocketEvents.CastSessionStarted, { deviceName: name }, () => {})
+      announceSessionStarted(name)
     } catch (err) {
       setStatus("disconnected")
       setError(
@@ -256,7 +295,7 @@ export function useCastSender(): UseCastSenderResult {
         ),
       )
     }
-  }, [supported, socket])
+  }, [supported, socket, announceSessionStarted])
 
   const disconnect = useCallback(() => {
     window.cast?.framework.CastContext.getInstance().endCurrentSession(true)
