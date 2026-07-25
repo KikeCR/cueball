@@ -38,7 +38,7 @@ interface UseCastSenderResult {
  * sendCastCommand) to whichever browser this hook is active in.
  */
 export function useCastSender(): UseCastSenderResult {
-  const { socket, room, self, cast } = useRoom()
+  const { socket, room, self, cast, queue } = useRoom()
   const [supported, setSupported] = useState(false)
   const [status, setStatus] = useState<CastConnectionStatus>("disconnected")
   const [deviceName, setDeviceName] = useState<string | null>(null)
@@ -48,6 +48,7 @@ export function useCastSender(): UseCastSenderResult {
   )
   const currentQueueItemIdRef = useRef<string | null>(null)
   currentQueueItemIdRef.current = cast?.currentQueueItemId ?? null
+  const advancingRef = useRef(false)
 
   const isHostCasting = room?.mode === "cast" && Boolean(self?.isHost)
 
@@ -63,15 +64,25 @@ export function useCastSender(): UseCastSenderResult {
   }, [])
 
   const advance = useCallback(() => {
-    if (!socket) return
+    if (!socket || advancingRef.current) return
+    advancingRef.current = true
     socket.emit(
       SocketEvents.CastAdvance,
       (result: CastAdvanceResult | ActionError) => {
+        advancingRef.current = false
         if ("error" in result) return
         if (result.nextYoutubeVideoId) loadVideo(result.nextYoutubeVideoId)
       },
     )
   }, [socket, loadVideo])
+
+  // Nothing plays until something is loaded: kick off the first item as
+  // soon as the session connects, and pick up again if the queue was empty
+  // at connect time and a video gets added while still idle.
+  useEffect(() => {
+    if (!isHostCasting || !cast?.connected || cast.currentQueueItemId) return
+    if (queue.some((item) => !item.playedAt)) advance()
+  }, [isHostCasting, cast?.connected, cast?.currentQueueItemId, queue, advance])
 
   // Load the Cast Sender SDK script, only for the host of a cast-mode room.
   useEffect(() => {
