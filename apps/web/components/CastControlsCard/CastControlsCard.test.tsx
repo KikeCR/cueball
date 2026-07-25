@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { QueueItem } from "@cueball/shared"
 import { CastControlsCardPageObject } from "../../test/page-objects/CastControlsCardPageObject"
 
 const sendCastCommandMock = vi.fn()
@@ -8,7 +9,9 @@ let castState: {
   connected: boolean
   deviceName: string | null
   isPlaying: boolean
+  currentQueueItemId: string | null
 } | null = null
+let queueState: QueueItem[] = []
 let castSenderState: {
   supported: boolean
   status: "disconnected" | "connecting" | "connected"
@@ -16,18 +19,39 @@ let castSenderState: {
 } = { supported: true, status: "disconnected", deviceName: null }
 
 vi.mock("../../context/RoomContext", () => ({
-  useRoom: () => ({ cast: castState, sendCastCommand: sendCastCommandMock }),
+  useRoom: () => ({
+    cast: castState,
+    queue: queueState,
+    sendCastCommand: sendCastCommandMock,
+  }),
 }))
 
 vi.mock("../../hooks/useCastSender", () => ({
   useCastSender: () => ({ ...castSenderState, connect: connectMock }),
 }))
 
+function makeQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
+  return {
+    id: "item-1",
+    roomId: "room-1",
+    youtubeVideoId: "abc123",
+    title: "Never Gonna Give You Up",
+    thumbnailUrl: "https://img.example/thumb.jpg",
+    addedByParticipantId: null,
+    score: 0,
+    playedAt: null,
+    createdAt: new Date().toISOString(),
+    votes: [],
+    ...overrides,
+  }
+}
+
 describe("CastControlsCard", () => {
   beforeEach(() => {
     sendCastCommandMock.mockReset()
     connectMock.mockReset()
     castState = null
+    queueState = []
     castSenderState = { supported: true, status: "disconnected", deviceName: null }
   })
 
@@ -54,7 +78,12 @@ describe("CastControlsCard", () => {
   })
 
   it("shows transport controls and the device name once connected", async () => {
-    castState = { connected: true, deviceName: "Living Room TV", isPlaying: false }
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+    }
     const card = new CastControlsCardPageObject({ isHost: false })
 
     expect(await card.findText("Living Room TV")).toBeInTheDocument()
@@ -67,10 +96,30 @@ describe("CastControlsCard", () => {
   })
 
   it("sends pause when the video is currently playing", async () => {
-    castState = { connected: true, deviceName: "Living Room TV", isPlaying: true }
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: true,
+      currentQueueItemId: null,
+    }
     const card = new CastControlsCardPageObject({ isHost: true })
 
     await card.clickPlayPause()
     expect(sendCastCommandMock).toHaveBeenCalledWith("pause")
+  })
+
+  it("shows the now-playing title and thumbnail for the loaded queue item", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: true,
+      currentQueueItemId: "item-1",
+    }
+    queueState = [makeQueueItem()]
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    expect(
+      await card.findText("Never Gonna Give You Up"),
+    ).toBeInTheDocument()
   })
 })

@@ -11,8 +11,10 @@ interface CastControlsCardProps {
 }
 
 export function CastControlsCard({ isHost }: CastControlsCardProps) {
-  const { cast, sendCastCommand } = useRoom()
+  const { cast, queue, sendCastCommand } = useRoom()
   const { supported, status, deviceName, connect } = useCastSender()
+  const nowPlaying =
+    queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
 
   if (!cast?.connected) {
     if (!isHost) {
@@ -51,36 +53,50 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <Badge variant="primary">{deviceName ?? cast.deviceName ?? "TV"}</Badge>
-      <div className="flex items-center gap-1.5">
-        <Button
-          type="button"
-          variant="icon"
-          size="sm"
-          className="w-9 px-0"
-          aria-label={cast.isPlaying ? "Pause" : "Play"}
-          onClick={() =>
-            void sendCastCommand(cast.isPlaying ? "pause" : "play")
-          }
-        >
-          {cast.isPlaying ? (
-            <Pause className="size-4" />
-          ) : (
-            <Play className="size-4" />
-          )}
-        </Button>
-        <Button
-          type="button"
-          variant="icon"
-          size="sm"
-          className="w-9 px-0"
-          aria-label="Skip"
-          onClick={() => void sendCastCommand("skip")}
-        >
-          <SkipForward className="size-4" />
-        </Button>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Badge variant="primary">{deviceName ?? cast.deviceName ?? "TV"}</Badge>
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            variant="icon"
+            size="sm"
+            className="w-9 px-0"
+            aria-label={cast.isPlaying ? "Pause" : "Play"}
+            onClick={() =>
+              void sendCastCommand(cast.isPlaying ? "pause" : "play")
+            }
+          >
+            {cast.isPlaying ? (
+              <Pause className="size-4" />
+            ) : (
+              <Play className="size-4" />
+            )}
+          </Button>
+          <Button
+            type="button"
+            variant="icon"
+            size="sm"
+            className="w-9 px-0"
+            aria-label="Skip"
+            onClick={() => void sendCastCommand("skip")}
+          >
+            <SkipForward className="size-4" />
+          </Button>
+        </div>
       </div>
+      {nowPlaying && (
+        <div className="flex items-center gap-3">
+          {nowPlaying.thumbnailUrl && (
+            <img
+              src={nowPlaying.thumbnailUrl}
+              alt=""
+              className="h-10 w-16 rounded-sm object-cover"
+            />
+          )}
+          <p className="truncate text-sm font-semibold">{nowPlaying.title}</p>
+        </div>
+      )}
     </div>
   )
 }
