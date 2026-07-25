@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto"
 import { Prisma, type Participant, type Room } from "@prisma/client"
 import { ROOM_CODE_LENGTH, type RoomMode } from "@cueball/shared"
 import { getConnectedParticipantIds } from "../redis/presence.js"
+import { getCastState } from "../redis/castSession.js"
 import {
   serializeParticipant,
   serializeQueueItem,
@@ -264,14 +265,13 @@ export async function getRoomState(roomId: string) {
   const queueItems = orderQueueForRoom(room.queueItems, room.manualQueueOrder)
 
   const connected = await getConnectedParticipantIds(roomId)
+  const cast = await getCastState(roomId)
   return {
     room: serializeRoom(room),
     participants: room.participants.map((p) =>
       serializeParticipant(p, connected.has(p.id)),
     ),
     queue: queueItems.map(serializeQueueItem),
-    // Populated once the Cast relay layer lands; a Cast-mode room has no
-    // live session until the host connects a TV from their browser.
-    cast: null,
+    cast,
   }
 }

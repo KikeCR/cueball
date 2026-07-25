@@ -14,6 +14,8 @@ import {
   SocketEvents,
   type ActionError,
   type ActionOk,
+  type CastCommandAction,
+  type CastSessionState,
   type ParticipantRemovedPayload,
   type ParticipantWithPresence,
   type PlaylistSyncFailedPayload,
@@ -59,6 +61,7 @@ interface RoomContextValue {
   room: Room | null
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
+  cast: CastSessionState | null
   self: ParticipantWithPresence | null
   joinError: string | null
   /** Set when the host removes this participant; cleared on the next successful join. */
@@ -73,6 +76,7 @@ interface RoomContextValue {
   setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   renameSelf: (name: string) => Promise<void>
+  sendCastCommand: (action: CastCommandAction, seekSeconds?: number) => Promise<void>
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -92,6 +96,7 @@ export function RoomProvider({
     [],
   )
   const [queue, setQueue] = useState<QueueItem[]>([])
+  const [cast, setCast] = useState<CastSessionState | null>(null)
   const [selfId, setSelfId] = useState<string | null>(null)
   const [joinError, setJoinError] = useState<string | null>(null)
   const [removedReason, setRemovedReason] = useState<string | null>(null)
@@ -124,6 +129,7 @@ export function RoomProvider({
       setRoom(state.room)
       setParticipants(state.participants)
       setQueue(state.queue)
+      setCast(state.cast)
     })
     socket.on(
       SocketEvents.ParticipantRemoved,
@@ -178,6 +184,7 @@ export function RoomProvider({
             setRoom(result.room)
             setParticipants(result.participants)
             setQueue(result.queue)
+            setCast(result.cast)
             setSelfId(result.participant.id)
             setJoinError(null)
             setRemovedReason(null)
@@ -240,6 +247,15 @@ export function RoomProvider({
     [],
   )
 
+  const sendCastCommand = useCallback(
+    (action: CastCommandAction, seekSeconds?: number) =>
+      emitAction(socketRef.current, SocketEvents.CastCommand, {
+        action,
+        seekSeconds,
+      }),
+    [],
+  )
+
   const self = participants.find((p) => p.id === selfId) ?? null
 
   return (
@@ -250,6 +266,7 @@ export function RoomProvider({
         room,
         participants,
         queue,
+        cast,
         self,
         joinError,
         removedReason,
@@ -262,6 +279,7 @@ export function RoomProvider({
         setQueueItemPlayed,
         removeParticipant,
         renameSelf,
+        sendCastCommand,
       }}
     >
       {children}

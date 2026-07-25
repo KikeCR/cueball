@@ -12,6 +12,7 @@ import {
   type RoomStatePayload,
 } from "@cueball/shared"
 import { markConnected, markDisconnected } from "../redis/presence.js"
+import { clearCastState, getCastState } from "../redis/castSession.js"
 import {
   addParticipant,
   getRoomState,
@@ -51,6 +52,17 @@ async function leaveCurrentRoom(io: Server, socket: RoomSocket): Promise<void> {
   if (!participantId || !roomId) return
 
   await markDisconnected(roomId, participantId)
+
+  // The host's browser is the only client ever bound to a live Cast
+  // session; if they leave (tab closed, connection dropped) without
+  // cleanly ending it, the session is gone regardless, so clear the
+  // stale "connected" state rather than leaving the room stuck showing
+  // a TV that's no longer actually reachable.
+  const castState = await getCastState(roomId)
+  if (castState?.casterParticipantId === participantId) {
+    await clearCastState(roomId)
+  }
+
   socket.leave(roomId)
   socket.data.participantId = undefined
   socket.data.roomId = undefined

@@ -14,6 +14,7 @@ import { roomsRouter } from "./routes/rooms.js"
 import { youtubeRouter } from "./routes/youtube.js"
 import { registerRoomHandlers } from "./sockets/room.js"
 import { registerQueueHandlers } from "./sockets/queue.js"
+import { registerCastHandlers } from "./sockets/cast.js"
 import { setIo } from "./realtime.js"
 import { sweepExpiredRooms } from "./services/roomService.js"
 
@@ -60,6 +61,7 @@ io.adapter(createAdapter(pubClient, subClient))
 
 registerRoomHandlers(io)
 registerQueueHandlers(io)
+registerCastHandlers(io)
 
 function runRoomSweep(): void {
   sweepExpiredRooms()
