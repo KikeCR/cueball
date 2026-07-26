@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { Users, ListVideo, Plus, Youtube, Cast, Loader2, Trash2 } from "lucide-react"
-import type { RoomPreview } from "@cueball/shared"
+import type { ConfigResponse, RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
 import { useToast } from "../../../context/ToastContext"
@@ -14,6 +14,7 @@ import { QueueList } from "../../../components/QueueList"
 import { ConnectYoutubeButton } from "../../../components/ConnectYoutubeButton"
 import { PlaylistShare } from "../../../components/PlaylistShare"
 import { CastControlsCard } from "../../../components/CastControlsCard"
+import { NowPlayingBanner } from "../../../components/NowPlayingBanner"
 import { CopyButton } from "../../../components/CopyButton"
 import { Card } from "../../../components/ui/card"
 import { Button } from "../../../components/ui/button"
@@ -25,6 +26,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     room,
     participants,
     queue,
+    cast,
     self,
     connected,
     reconnecting,
@@ -45,6 +47,8 @@ function RoomView({ roomCode }: { roomCode: string }) {
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [clearQueueDialogOpen, setClearQueueDialogOpen] = useState(false)
   const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const [roomExpiryHours, setRoomExpiryHours] = useState<number | null>(null)
 
   useEffect(() => {
     api
@@ -54,6 +58,15 @@ function RoomView({ roomCode }: { roomCode: string }) {
         setPreviewError(err instanceof Error ? err.message : "Room not found"),
       )
   }, [roomCode])
+
+  useEffect(() => {
+    // Best-effort: purely informational, so a failure here shouldn't affect
+    // the room itself or surface an error toast.
+    api
+      .get<ConfigResponse>("/api/config")
+      .then((data) => setRoomExpiryHours(data.roomExpiryHours))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     // Deliberately omits `toast` from deps: ToastProvider's context value is
@@ -118,9 +131,15 @@ function RoomView({ roomCode }: { roomCode: string }) {
   }
 
   const handleReorder = (orderedQueueItemIds: string[]) => {
-    reorderQueue(orderedQueueItemIds).catch(
-      reportActionError("Failed to reorder queue"),
-    )
+    // Reorder is confirm-before-commit against the real YouTube playlist
+    // (writes go one at a time — see syncPlaylistOrderForItems), so a
+    // multi-item drag can take a few seconds to land. Surface that as a
+    // pending state instead of leaving the drop looking like it did nothing
+    // until the broadcast finally arrives.
+    setReordering(true)
+    reorderQueue(orderedQueueItemIds)
+      .catch(reportActionError("Failed to reorder queue"))
+      .finally(() => setReordering(false))
   }
 
   const handleSetPlayed = (queueItemId: string, played: boolean) => {
@@ -165,6 +184,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
       .catch(reportActionError("Failed to update repeat"))
   }
 
+  const nowPlayingItem = queue.find((item) => !item.playedAt) ?? null
+  const canMarkNowPlayingPlayed = Boolean(
+    nowPlayingItem &&
+      (self.id === nowPlayingItem.addedByParticipantId || self.isHost),
+  )
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
@@ -183,8 +208,25 @@ function RoomView({ roomCode }: { roomCode: string }) {
             </span>
             <CopyButton value={roomCode} label="Copy room code" />
           </p>
+          {roomExpiryHours != null && (
+            <p className="mt-0.5 text-xs text-muted">
+              Inactive rooms are cleared automatically after {roomExpiryHours}h.
+            </p>
+          )}
         </div>
       </div>
+
+      {!(room?.mode === "cast" && cast?.connected) && (
+        <div className="mb-5">
+          <NowPlayingBanner
+            item={nowPlayingItem}
+            canMarkPlayed={canMarkNowPlayingPlayed}
+            onMarkPlayed={() =>
+              nowPlayingItem && handleSetPlayed(nowPlayingItem.id, true)
+            }
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-3">
@@ -277,6 +319,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             manualOrderActive={Boolean(room?.manualQueueOrder)}
             repeatEnabled={Boolean(room?.repeatEnabled)}
             onSetRepeat={handleSetRepeat}
+            reordering={reordering}
           />
         </Card>
       </div>

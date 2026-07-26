@@ -82,6 +82,19 @@ describe("RoomHistoryList", () => {
     expect(toastErrorMock).toHaveBeenCalledWith("Server unavailable")
   })
 
+  it("shows the room-expiry note once config loads", async () => {
+    vi.mocked(api.get).mockImplementation((path: string) => {
+      if (path === "/api/config") return Promise.resolve({ roomExpiryHours: 24 })
+      return Promise.resolve({ rooms: [HOST_ROOM] })
+    })
+    const list = new RoomHistoryListPageObject()
+    await list.findRoomName("Movie night")
+
+    expect(
+      await list.findByText(/cleared automatically after 24h/i),
+    ).toBeInTheDocument()
+  })
+
   it("only shows a delete button for rooms the user hosts", async () => {
     vi.mocked(api.get).mockResolvedValue({ rooms: [HOST_ROOM, GUEST_ROOM] })
     const list = new RoomHistoryListPageObject()

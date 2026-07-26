@@ -56,11 +56,17 @@ export function registerQueueHandlers(io: Server): void {
           return
         }
 
-        // The queue only exists to feed the real playlist, so require that
-        // connection before accepting adds rather than silently queuing
-        // videos in-app that never make it to the TV.
         const room = await prisma.room.findUnique({ where: { id: roomId } })
-        if (!room?.youtubePlaylistId) {
+        if (!room) {
+          ack?.({ error: "Room not found" })
+          return
+        }
+        // Playlist-sync rooms exist to feed a real YouTube playlist, so
+        // require that connection before accepting adds rather than
+        // silently queuing videos in-app that never make it to the TV.
+        // Cast-mode rooms never have (or need) a playlist — the Cast SDK
+        // loads videos directly by id — so this doesn't apply to them.
+        if (room.mode !== "CAST" && !room.youtubePlaylistId) {
           ack?.({
             error: "Ask the host to connect YouTube before adding videos",
           })

@@ -1,6 +1,11 @@
 import { Router } from "express"
+import type { YoutubeSearchResponse } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
 import { getIo } from "../realtime.js"
+import {
+  getCachedSearchResults,
+  setCachedSearchResults,
+} from "../redis/youtubeSearchCache.js"
 import { prisma } from "../services/prisma.js"
 import {
   signYoutubeOAuthState,
@@ -8,12 +13,18 @@ import {
   verifyYoutubeOAuthState,
 } from "../services/tokens.js"
 import {
+  isYoutubeDataApiConfigured,
+  searchYoutubeVideos,
+} from "../services/youtube.js"
+import {
   exchangeCodeForTokens,
   getConsentUrl,
   isYoutubeOAuthConfigured,
 } from "../services/youtubeAuth.js"
 import { createPlaylistForRoom } from "../services/youtubePlaylist.js"
 import { broadcastRoomState } from "../sockets/broadcast.js"
+
+const MAX_SEARCH_QUERY_LENGTH = 100
 
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000"
 
@@ -90,5 +101,37 @@ youtubeRouter.get(
     if (io) await broadcastRoomState(io, room.id)
 
     res.redirect(`${CLIENT_ORIGIN}/room/${room.code}?youtubeConnected=1`)
+  }),
+)
+
+youtubeRouter.get(
+  "/youtube/search",
+  asyncHandler(async (req, res) => {
+    if (!isYoutubeDataApiConfigured()) {
+      res
+        .status(503)
+        .json({ error: "YouTube search isn't configured on this server" })
+      return
+    }
+
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : ""
+    if (!query) {
+      res.status(400).json({ error: "q is required" })
+      return
+    }
+    if (query.length > MAX_SEARCH_QUERY_LENGTH) {
+      res.status(400).json({ error: "Search query is too long" })
+      return
+    }
+
+    const cached = await getCachedSearchResults(query)
+    if (cached) {
+      res.json({ results: cached } satisfies YoutubeSearchResponse)
+      return
+    }
+
+    const results = await searchYoutubeVideos(query)
+    await setCachedSearchResults(query, results)
+    res.json({ results } satisfies YoutubeSearchResponse)
   }),
 )

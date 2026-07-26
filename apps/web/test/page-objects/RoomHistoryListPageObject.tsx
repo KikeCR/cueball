@@ -17,6 +17,10 @@ export class RoomHistoryListPageObject {
     return screen.findAllByText(text)
   }
 
+  findByText(text: string | RegExp) {
+    return screen.findByText(text)
+  }
+
   findEmptyMessage() {
     return screen.findByText(/no rooms yet/i)
   }

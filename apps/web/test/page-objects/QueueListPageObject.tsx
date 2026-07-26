@@ -15,6 +15,7 @@ interface QueueListProps {
   manualOrderActive?: boolean
   repeatEnabled?: boolean
   onSetRepeat?: (enabled: boolean) => void
+  reordering?: boolean
 }
 
 export class QueueListPageObject {
@@ -50,6 +51,10 @@ export class QueueListPageObject {
 
   get dragHandles() {
     return screen.queryAllByRole("button", { name: "Drag to reorder" })
+  }
+
+  get reorderingBanner() {
+    return screen.queryByText(/updating the youtube playlist order/i)
   }
 
   get markPlayedButton() {

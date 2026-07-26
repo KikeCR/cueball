@@ -85,3 +85,10 @@ export interface RoomHistoryEntry {
   isHost: boolean
   lastActiveAt: string
 }
+
+export interface YoutubeSearchResult {
+  videoId: string
+  title: string
+  thumbnailUrl: string | null
+  channelTitle: string
+}

@@ -6,6 +6,7 @@ import type {
   Room,
   RoomHistoryEntry,
   RoomMode,
+  YoutubeSearchResult,
 } from "./types.js"
 
 export const SocketEvents = {
@@ -172,4 +173,13 @@ export interface AuthResponse {
 
 export interface RoomHistoryResponse {
   rooms: RoomHistoryEntry[]
+}
+
+export interface YoutubeSearchResponse {
+  results: YoutubeSearchResult[]
+}
+
+export interface ConfigResponse {
+  /** Rooms with no activity for this many hours, and nobody connected, get deleted automatically. */
+  roomExpiryHours: number
 }

@@ -12,7 +12,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Check, ChevronDown, ChevronUp, GripVertical, Repeat, Trash2, Undo2, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, Repeat, Trash2, Undo2, X } from "lucide-react"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { cn } from "../../utils/cn"
 import { Button } from "../ui/button"
@@ -32,6 +32,8 @@ interface QueueListProps {
   /** When on, finishing the last unplayed video restarts the whole played history as a fresh lap. */
   repeatEnabled?: boolean
   onSetRepeat?: (enabled: boolean) => void
+  /** True while a drag-reorder is being confirmed against the real YouTube playlist. */
+  reordering?: boolean
 }
 
 export function QueueList({
@@ -46,6 +48,7 @@ export function QueueList({
   manualOrderActive = false,
   repeatEnabled = false,
   onSetRepeat,
+  reordering = false,
 }: QueueListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -64,7 +67,7 @@ export function QueueList({
   const self = selfId
     ? (participants.find((p) => p.id === selfId) ?? null)
     : null
-  const canReorder = Boolean(self?.isHost && onReorder)
+  const canReorder = Boolean(self?.isHost && onReorder) && !reordering
   const votingLocked = manualOrderActive && !self?.isHost
 
   const upcoming = queue.filter((item) => !item.playedAt)
@@ -84,7 +87,13 @@ export function QueueList({
   }
 
   const upcomingList = (
-    <ol className="flex flex-col gap-3">
+    <ol className={cn("flex flex-col gap-3", reordering && "opacity-60")}>
+      {reordering && (
+        <li className="flex items-center gap-1.5 rounded-md border border-border bg-surface-hover px-3 py-2 text-xs text-muted">
+          <Loader2 className="size-3.5 animate-spin" /> Updating the YouTube
+          playlist order…
+        </li>
+      )}
       {manualOrderActive && (
         <li className="rounded-md border border-border bg-surface-hover px-3 py-2 text-xs text-muted">
           {self?.isHost

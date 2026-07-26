@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
+  decodeHtmlEntities,
   fetchVideoDurationSeconds,
   fetchVideoMetadata,
   formatDurationClock,
   isYoutubeDataApiConfigured,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
+  searchYoutubeVideos,
 } from "./youtube.js"
 
 describe("parseYoutubeVideoId", () => {
@@ -158,5 +160,162 @@ describe("isYoutubeDataApiConfigured / fetchVideoDurationSeconds", () => {
     )
 
     expect(await fetchVideoDurationSeconds("missing")).toBeNull()
+  })
+})
+
+describe("decodeHtmlEntities", () => {
+  it.each([
+    ['Mac DeMarco // &quot;Ode To Viceroy&quot;', 'Mac DeMarco // "Ode To Viceroy"'],
+    ["Rock &amp; Roll", "Rock & Roll"],
+    ["It&#39;s Britney", "It's Britney"],
+    ["&lt;Title&gt;", "<Title>"],
+    ["Caf&#233; music", "Café music"],
+    ["No entities here", "No entities here"],
+  ])("decodes %s as %s", (input, expected) => {
+    expect(decodeHtmlEntities(input)).toBe(expected)
+  })
+})
+
+describe("searchYoutubeVideos", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it("returns an empty list and skips the request when unconfigured", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "")
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    expect(await searchYoutubeVideos("rick astley")).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("maps search results, preferring the medium thumbnail", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            {
+              id: { videoId: "dQw4w9WgXcQ" },
+              snippet: {
+                title: "Never Gonna Give You Up",
+                channelTitle: "Rick Astley",
+                thumbnails: {
+                  default: { url: "https://i.ytimg.com/default.jpg" },
+                  medium: { url: "https://i.ytimg.com/medium.jpg" },
+                },
+              },
+            },
+          ],
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await searchYoutubeVideos("rick astley")
+
+    expect(result).toEqual([
+      {
+        videoId: "dQw4w9WgXcQ",
+        title: "Never Gonna Give You Up",
+        thumbnailUrl: "https://i.ytimg.com/medium.jpg",
+        channelTitle: "Rick Astley",
+      },
+    ])
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=rick%20astley&key=test-key",
+      ),
+    )
+  })
+
+  it("decodes HTML entities in the title and channel name", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                id: { videoId: "abc" },
+                snippet: {
+                  title: "Mac DeMarco // &quot;Ode To Viceroy&quot;",
+                  channelTitle: "Rock &amp; Roll Hall of Fame",
+                  thumbnails: {},
+                },
+              },
+            ],
+          }),
+      }),
+    )
+
+    const result = await searchYoutubeVideos("ode to viceroy")
+
+    expect(result[0]?.title).toBe('Mac DeMarco // "Ode To Viceroy"')
+    expect(result[0]?.channelTitle).toBe("Rock & Roll Hall of Fame")
+  })
+
+  it("falls back to the default thumbnail when no medium size is present", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                id: { videoId: "abc" },
+                snippet: {
+                  title: "Some Video",
+                  channelTitle: "Some Channel",
+                  thumbnails: { default: { url: "https://i.ytimg.com/default.jpg" } },
+                },
+              },
+            ],
+          }),
+      }),
+    )
+
+    const result = await searchYoutubeVideos("query")
+    expect(result[0]?.thumbnailUrl).toBe("https://i.ytimg.com/default.jpg")
+  })
+
+  it("skips results with no videoId (e.g. channels/playlists slipping through)", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                id: {},
+                snippet: {
+                  title: "Not a video",
+                  channelTitle: "Someone",
+                  thumbnails: {},
+                },
+              },
+            ],
+          }),
+      }),
+    )
+
+    expect(await searchYoutubeVideos("query")).toEqual([])
+  })
+
+  it("throws when the API request fails", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }))
+
+    await expect(searchYoutubeVideos("query")).rejects.toThrow(
+      "YouTube search failed with status 403",
+    )
   })
 })

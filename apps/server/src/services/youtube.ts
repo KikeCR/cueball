@@ -106,3 +106,83 @@ export function formatDurationClock(totalSeconds: number): string {
   const seconds = totalSeconds % 60
   return `${minutes}:${String(seconds).padStart(2, "0")}`
 }
+
+export interface YoutubeSearchResult {
+  videoId: string
+  title: string
+  thumbnailUrl: string | null
+  channelTitle: string
+}
+
+const NAMED_HTML_ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  lt: "<",
+  gt: ">",
+  nbsp: " ",
+}
+
+/**
+ * search.list's snippet.title/channelTitle come back with HTML entities
+ * escaped (e.g. `&quot;Ode to Viceroy&quot;`) — YouTube itself renders these
+ * as HTML, but nothing else in this app's flow shows text that way, so
+ * they're decoded once here rather than leaking `&quot;` into every client.
+ */
+export function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity: string) => {
+    if (entity[0] === "#") {
+      const isHex = entity[1] === "x" || entity[1] === "X"
+      const codePoint = parseInt(entity.slice(isHex ? 2 : 1), isHex ? 16 : 10)
+      return Number.isNaN(codePoint) ? match : String.fromCodePoint(codePoint)
+    }
+    return NAMED_HTML_ENTITIES[entity] ?? match
+  })
+}
+
+interface SearchListResponse {
+  items: Array<{
+    id: { videoId?: string }
+    snippet: {
+      title: string
+      channelTitle: string
+      thumbnails: { medium?: { url: string }; default?: { url: string } }
+    }
+  }>
+}
+
+/**
+ * search.list costs 100 quota units per call — flat, regardless of
+ * maxResults — vs. ~1 unit for the videos.list/playlistItems calls used
+ * elsewhere in this file. With a default 10,000/day project quota, that's
+ * only ~100 searches a day across the whole app. Callers must cache
+ * identical queries (see redis/youtubeSearchCache.ts) rather than call this
+ * on every keystroke.
+ */
+export async function searchYoutubeVideos(
+  query: string,
+): Promise<YoutubeSearchResult[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) return []
+
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=${encodeURIComponent(query)}&key=${apiKey}`
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`YouTube search failed with status ${res.status}`)
+  }
+
+  const body = (await res.json()) as SearchListResponse
+  return body.items
+    .filter((item): item is typeof item & { id: { videoId: string } } =>
+      Boolean(item.id.videoId),
+    )
+    .map((item) => ({
+      videoId: item.id.videoId,
+      title: decodeHtmlEntities(item.snippet.title),
+      thumbnailUrl:
+        item.snippet.thumbnails.medium?.url ??
+        item.snippet.thumbnails.default?.url ??
+        null,
+      channelTitle: decodeHtmlEntities(item.snippet.channelTitle),
+    }))
+}

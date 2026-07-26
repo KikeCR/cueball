@@ -161,7 +161,9 @@ export async function touchRoomActivity(roomId: string): Promise<void> {
   })
 }
 
-const DEFAULT_ROOM_EXPIRY_HOURS = Number(process.env.ROOM_EXPIRY_HOURS ?? 24)
+export const DEFAULT_ROOM_EXPIRY_HOURS = Number(
+  process.env.ROOM_EXPIRY_HOURS ?? 24,
+)
 
 /**
  * Deletes rooms that have had no activity for `expiryHours` and currently

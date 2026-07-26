@@ -169,6 +169,35 @@ describe("QueueList", () => {
     expect(queueList.dragHandles).toHaveLength(0)
   })
 
+  it("shows a pending banner and disables drag handles while a reorder is in flight", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem({ id: "q1" }), makeItem({ id: "q2" })],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onReorder: vi.fn(),
+      reordering: true,
+    })
+
+    expect(queueList.reorderingBanner).toBeInTheDocument()
+    expect(queueList.dragHandles).toHaveLength(0)
+  })
+
+  it("hides the reordering banner once the round-trip finishes", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem({ id: "q1" })],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onReorder: vi.fn(),
+      reordering: false,
+    })
+
+    expect(queueList.reorderingBanner).not.toBeInTheDocument()
+  })
+
   it("pauses voting for a non-host once the host has set a manual order", () => {
     const onVote = vi.fn()
     const queueList = new QueueListPageObject({

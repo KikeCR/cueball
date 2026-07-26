@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Loader2, Trash2 } from "lucide-react"
-import type { RoomHistoryEntry, RoomHistoryResponse } from "@cueball/shared"
+import type {
+  ConfigResponse,
+  RoomHistoryEntry,
+  RoomHistoryResponse,
+} from "@cueball/shared"
 import { api } from "../../api/client"
 import { useAuth } from "../../context/AuthContext"
 import { useToast } from "../../context/ToastContext"
@@ -17,6 +21,7 @@ export function RoomHistoryList() {
   const [failed, setFailed] = useState(false)
   const [roomPendingDeletion, setRoomPendingDeletion] =
     useState<RoomHistoryEntry | null>(null)
+  const [roomExpiryHours, setRoomExpiryHours] = useState<number | null>(null)
 
   useEffect(() => {
     if (!token) return
@@ -30,6 +35,15 @@ export function RoomHistoryList() {
     // `toast` deliberately omitted: its wrapper object is a new reference
     // on every toast anywhere in the app, which would refetch on each one.
   }, [token])
+
+  useEffect(() => {
+    // Best-effort: this is just an informational note, so a failure here
+    // shouldn't affect the room list itself or surface an error toast.
+    api
+      .get<ConfigResponse>("/api/config")
+      .then((data) => setRoomExpiryHours(data.roomExpiryHours))
+      .catch(() => {})
+  }, [])
 
   const handleConfirmDelete = () => {
     const room = roomPendingDeletion
@@ -69,6 +83,11 @@ export function RoomHistoryList() {
 
   return (
     <>
+      {roomExpiryHours != null && (
+        <p className="mb-2 text-xs text-muted">
+          Inactive rooms are cleared automatically after {roomExpiryHours}h.
+        </p>
+      )}
       <ul className="flex flex-col gap-1">
         {rooms.map((room) => (
           <li key={room.id} className="flex items-center gap-1">
