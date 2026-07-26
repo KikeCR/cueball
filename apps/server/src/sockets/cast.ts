@@ -7,7 +7,11 @@ import {
   type CastSessionStartedPayload,
   type CastSessionState,
 } from "@cueball/shared"
-import { clearCastState, setCastState } from "../redis/castSession.js"
+import {
+  clearCastState,
+  getCastState,
+  setCastState,
+} from "../redis/castSession.js"
 import {
   clearLoungeSessionState,
   getLoungeSessionState,
@@ -55,8 +59,6 @@ export function registerCastHandlers(io: Server): void {
             casterParticipantId: participantId,
             isPlaying: false,
             currentQueueItemId: null,
-            currentTimeSeconds: null,
-            durationSeconds: null,
           }
 
           // The Cast SDK connection only launches the receiver (which is why
@@ -164,6 +166,22 @@ export function registerCastHandlers(io: Server): void {
               updated = await seekLoungeTo(lounge, payload.seekSeconds)
             }
             if (updated) await setLoungeSessionState(roomId, updated)
+
+            // isPlaying reflects the command just sent, not something
+            // polled — the receiver never reliably reports play/pause state
+            // back (see castLoungePolling.ts), so this is the only accurate
+            // source for it. "skip" implies the next video starts playing;
+            // "seek" doesn't change play/pause state either way.
+            if (payload.action === "play" || payload.action === "skip") {
+              const cast = await getCastState(roomId)
+              if (cast) await setCastState(roomId, { ...cast, isPlaying: true })
+              await broadcastRoomState(io, roomId)
+            } else if (payload.action === "pause") {
+              const cast = await getCastState(roomId)
+              if (cast) await setCastState(roomId, { ...cast, isPlaying: false })
+              await broadcastRoomState(io, roomId)
+            }
+
             ack?.({ ok: true })
           } catch (err) {
             console.error(`Failed to send cast command for room ${roomId}`, err)

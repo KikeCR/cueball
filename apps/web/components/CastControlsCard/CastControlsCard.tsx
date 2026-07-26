@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { Cast, Loader2, Pause, Play, SkipForward, X } from "lucide-react"
 import { useRoom } from "../../context/RoomContext"
+import { useToast } from "../../context/ToastContext"
 import { useCastSender } from "../../hooks/useCastSender"
 import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
@@ -10,18 +12,43 @@ interface CastControlsCardProps {
   isHost: boolean
 }
 
-function formatTime(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds))
-  const mins = Math.floor(total / 60)
-  const secs = total % 60
-  return `${mins}:${secs.toString().padStart(2, "0")}`
-}
-
 export function CastControlsCard({ isHost }: CastControlsCardProps) {
   const { cast, queue, sendCastCommand } = useRoom()
   const { supported, status, deviceName, connect, disconnect } = useCastSender()
+  const toast = useToast()
+  const [togglePending, setTogglePending] = useState(false)
+  const [skipPending, setSkipPending] = useState(false)
   const nowPlaying =
     queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
+
+  const reportCommandError = (err: unknown) => {
+    toast.error(
+      err instanceof Error ? err.message : "Couldn't send that command to the TV",
+    )
+  }
+
+  const handleTogglePlay = async () => {
+    if (!cast) return
+    setTogglePending(true)
+    try {
+      await sendCastCommand(cast.isPlaying ? "pause" : "play")
+    } catch (err) {
+      reportCommandError(err)
+    } finally {
+      setTogglePending(false)
+    }
+  }
+
+  const handleSkip = async () => {
+    setSkipPending(true)
+    try {
+      await sendCastCommand("skip")
+    } catch (err) {
+      reportCommandError(err)
+    } finally {
+      setSkipPending(false)
+    }
+  }
 
   if (!cast?.connected) {
     if (!isHost) {
@@ -70,11 +97,13 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
             size="sm"
             className="w-9 px-0"
             aria-label={cast.isPlaying ? "Pause" : "Play"}
-            onClick={() =>
-              void sendCastCommand(cast.isPlaying ? "pause" : "play")
-            }
+            title={cast.isPlaying ? "Pause" : "Play"}
+            disabled={togglePending}
+            onClick={() => void handleTogglePlay()}
           >
-            {cast.isPlaying ? (
+            {togglePending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : cast.isPlaying ? (
               <Pause className="size-4" />
             ) : (
               <Play className="size-4" />
@@ -85,10 +114,16 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
             variant="icon"
             size="sm"
             className="w-9 px-0"
-            aria-label="Skip"
-            onClick={() => void sendCastCommand("skip")}
+            aria-label="Skip to next video"
+            title="Skip to next video"
+            disabled={skipPending}
+            onClick={() => void handleSkip()}
           >
-            <SkipForward className="size-4" />
+            {skipPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <SkipForward className="size-4" />
+            )}
           </Button>
           {isHost && (
             <Button
@@ -96,7 +131,8 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
               variant="icon"
               size="sm"
               className="w-9 px-0"
-              aria-label="Disconnect"
+              aria-label="Disconnect from TV"
+              title="Disconnect from TV"
               onClick={disconnect}
             >
               <X className="size-4" />
@@ -114,27 +150,6 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
             />
           )}
           <p className="truncate text-sm font-semibold">{nowPlaying.title}</p>
-        </div>
-      )}
-      {cast.durationSeconds != null && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs tabular-nums text-muted">
-            {formatTime(cast.currentTimeSeconds ?? 0)}
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={cast.durationSeconds}
-            value={cast.currentTimeSeconds ?? 0}
-            onChange={(event) =>
-              void sendCastCommand("seek", Number(event.target.value))
-            }
-            aria-label="Seek"
-            className="h-1.5 flex-1 accent-primary"
-          />
-          <span className="text-xs tabular-nums text-muted">
-            {formatTime(cast.durationSeconds)}
-          </span>
         </div>
       )}
     </div>
