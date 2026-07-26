@@ -5,6 +5,7 @@ import {
   clearLoungePlaylist,
   getLoungeNowPlaying,
   getLoungeToken,
+  removeVideoFromLoungeQueue,
   seekLoungeTo,
   sendLoungeTransportCommand,
   setLoungePlaylist,
@@ -169,6 +170,17 @@ describe("lounge commands", () => {
     const [, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     const body = new URLSearchParams(actionInit.body as string)
     expect(body.get("req0__sc")).toBe("addVideo")
+    expect(body.get("req0_videoId")).toBe("abc123")
+  })
+
+  it("removeVideoFromLoungeQueue sends removeVideo", async () => {
+    const fetchMock = stubRebindThenAction()
+
+    await removeVideoFromLoungeQueue(sampleSession, "abc123")
+
+    const [, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    const body = new URLSearchParams(actionInit.body as string)
+    expect(body.get("req0__sc")).toBe("removeVideo")
     expect(body.get("req0_videoId")).toBe("abc123")
   })
 

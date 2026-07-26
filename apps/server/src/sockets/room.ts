@@ -12,7 +12,6 @@ import {
   type RoomSetRepeatPayload,
   type RoomStatePayload,
 } from "@cueball/shared"
-import { clearCastState, getCastState } from "../redis/castSession.js"
 import {
   addParticipant,
   getRoomState,
@@ -51,16 +50,11 @@ async function leaveCurrentRoom(io: Server, socket: RoomSocket): Promise<void> {
   const { participantId, roomId } = socket.data
   if (!participantId || !roomId) return
 
-  // The host's browser is the only client ever bound to a live Cast
-  // session; if they leave (tab closed, connection dropped) without
-  // cleanly ending it, the session is gone regardless, so clear the
-  // stale "connected" state rather than leaving the room stuck showing
-  // a TV that's no longer actually reachable.
-  const castState = await getCastState(roomId)
-  if (castState?.casterParticipantId === participantId) {
-    await clearCastState(roomId)
-  }
-
+  // Cast sessions are driven server-side via YouTube's Lounge API (see
+  // sockets/cast.ts, sockets/castLoungePolling.ts) and survive independently
+  // of any browser tab — including the host's — so a socket disconnect here
+  // (which also fires on an ordinary page refresh) must never tear down
+  // cast/lounge state. Only the explicit CastSessionEnded handler should.
   socket.leave(roomId)
   socket.data.participantId = undefined
   socket.data.roomId = undefined

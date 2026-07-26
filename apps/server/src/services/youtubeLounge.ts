@@ -174,6 +174,15 @@ export async function addVideoToLoungeQueue(
   return sendLoungeAction(bound, { __sc: "addVideo", _videoId: videoId, count: 1 })
 }
 
+/** Removes one video from the receiver's own live queue, without touching whatever's currently playing. */
+export async function removeVideoFromLoungeQueue(
+  session: LoungeSessionState,
+  videoId: string,
+): Promise<LoungeSessionState> {
+  const bound = await rebindLoungeSession(session)
+  return sendLoungeAction(bound, { __sc: "removeVideo", _videoId: videoId, count: 1 })
+}
+
 export async function clearLoungePlaylist(
   session: LoungeSessionState,
 ): Promise<LoungeSessionState> {
