@@ -123,6 +123,13 @@ export function useCastSender(): UseCastSenderResult {
   }, [isHostCasting, cast?.connected, cast?.currentQueueItemId, queue, advance])
 
   // Load the Cast Sender SDK script, only for the host of a cast-mode room.
+  // This SDK does a one-time async handshake with the browser's own Cast
+  // component to populate window.cast — it's a page-global bootstrap, not
+  // something scoped to this component's lifecycle, so once requested it
+  // must be left alone. Tearing the <script> tag down and re-adding it (e.g.
+  // in a cleanup keyed to isHostCasting, which can flip transiently during
+  // room-state hydration) interrupts that handshake and leaves window.cast
+  // permanently undefined even on browsers where Casting genuinely works.
   useEffect(() => {
     if (!isHostCasting) return
     if (window.cast?.framework) {
@@ -137,12 +144,10 @@ export function useCastSender(): UseCastSenderResult {
       setSupported(isAvailable && Boolean(window.cast?.framework))
     }
 
+    if (document.querySelector(`script[src="${CAST_SENDER_SCRIPT_SRC}"]`)) return
     const script = document.createElement("script")
     script.src = CAST_SENDER_SCRIPT_SRC
     document.head.appendChild(script)
-    return () => {
-      document.head.removeChild(script)
-    }
   }, [isHostCasting])
 
   // Once the SDK is available, configure the YouTube receiver app and set
