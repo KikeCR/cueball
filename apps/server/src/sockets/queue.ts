@@ -38,7 +38,11 @@ import {
   removeVideoFromPlaylist,
   syncPlaylistOrderForItems,
 } from "../services/youtubePlaylist.js"
-import { addVideoToLoungeQueue, setLoungePlaylist } from "../services/youtubeLounge.js"
+import {
+  addVideoToLoungeQueue,
+  removeVideoFromLoungeQueue,
+  setLoungePlaylist,
+} from "../services/youtubeLounge.js"
 import { getCastState, setCastState } from "../redis/castSession.js"
 import {
   getLoungeSessionState,
@@ -338,6 +342,50 @@ export function registerQueueHandlers(io: Server): void {
           })
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
+
+          // The receiver's own live queue only ever grows via addVideo
+          // (see QueueAdd above and CastSessionStarted in sockets/cast.ts)
+          // — it has no reorder primitive — so reflecting a new order there
+          // means dropping and re-adding everything except whatever's
+          // currently playing, which is left untouched. Best-effort: the
+          // in-app order is already correct regardless of whether this
+          // lands.
+          if (room?.mode === "CAST") {
+            try {
+              const lounge = await getLoungeSessionState(roomId)
+              if (lounge) {
+                const cast = await getCastState(roomId)
+                const upcoming = prepared.items.filter(
+                  (item) => item.id !== cast?.currentQueueItemId,
+                )
+
+                let session = lounge
+                for (const item of upcoming) {
+                  session = await removeVideoFromLoungeQueue(
+                    session,
+                    item.youtubeVideoId,
+                  )
+                }
+                for (const item of upcoming) {
+                  session = await addVideoToLoungeQueue(
+                    session,
+                    item.youtubeVideoId,
+                  )
+                }
+                await setLoungeSessionState(roomId, session)
+              }
+            } catch (err) {
+              console.error(
+                `Failed to sync reordered queue to the live Cast session for room ${roomId}`,
+                err,
+              )
+              notifyPlaylistSyncFailed(
+                io,
+                roomId,
+                "Couldn't update the TV's live queue order.",
+              )
+            }
+          }
         })()
       },
     )
