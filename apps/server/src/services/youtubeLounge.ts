@@ -29,11 +29,13 @@ const BASE_HEADERS = {
 // YouTube's backend recognizes a rebind as the same sender reconnecting
 // (preserving the live session) rather than a brand new one.
 const SENDER_DEVICE_ID = "cueballcueballcueballcueba"
+const SENDER_DEVICE_TYPE = "REMOTE_CONTROL"
+const SENDER_NAME = "CueBall"
 
 const BIND_DATA: Record<string, string | number> = {
-  device: "REMOTE_CONTROL",
+  device: SENDER_DEVICE_TYPE,
   id: SENDER_DEVICE_ID,
-  name: "CueBall",
+  name: SENDER_NAME,
   "mdx-version": 3,
   pairing_type: "cast",
   app: "android-phone-13.14.55",
@@ -46,6 +48,8 @@ export interface LoungeSessionState {
   gsessionid: string
   rid: number
   reqCount: number
+  /** Increments once per command sent, independent of rid/reqCount (which reset on every rebind) — mirrors the "ofs" field a persistently-connected Lounge client tracks across its whole session. */
+  commandOffset: number
 }
 
 function encodeForm(fields: Record<string, string | number>): string {
@@ -103,7 +107,15 @@ export async function bindLoungeSession(
   if (!sid || !gsessionid) {
     throw new Error("Couldn't parse a YouTube lounge session from the bind response")
   }
-  return { screenId, loungeToken, sid, gsessionid, rid: 1, reqCount: 0 }
+  return {
+    screenId,
+    loungeToken,
+    sid,
+    gsessionid,
+    rid: 1,
+    reqCount: 0,
+    commandOffset: 0,
+  }
 }
 
 /** First-time setup for a newly connected Cast session: token, then bind. */
@@ -114,18 +126,31 @@ export async function startLoungeSession(
   return bindLoungeSession(screenId, loungeToken)
 }
 
-export function rebindLoungeSession(
+/** Re-binds using the same lounge token, carrying the running command offset forward (rebinding itself resets rid/reqCount, but commandOffset tracks the whole session's command history, not just one bind). */
+export async function rebindLoungeSession(
   session: LoungeSessionState,
 ): Promise<LoungeSessionState> {
-  return bindLoungeSession(session.screenId, session.loungeToken)
+  const bound = await bindLoungeSession(session.screenId, session.loungeToken)
+  return { ...bound, commandOffset: session.commandOffset }
 }
 
-/** Sends one command against an already-bound session. */
+/**
+ * Sends one command against an already-bound session. Every command needs
+ * `count`/`ofs` fields regardless of type — a gap in the original version
+ * of this file (present for queue mutations, silently missing for
+ * play/pause/next/seekTo) that likely explains those never working despite
+ * setPlaylist/addVideo succeeding. Field/query shape now matches a fuller
+ * reference implementation (github.com/bertybuttface/youtube-lounge-rs)
+ * rather than the more minimal one the rest of this file is based on.
+ */
 async function sendLoungeAction(
   session: LoungeSessionState,
   fields: Record<string, string | number>,
 ): Promise<LoungeSessionState> {
-  const prefixed: Record<string, string | number> = {}
+  const prefixed: Record<string, string | number> = {
+    count: 1,
+    ofs: session.commandOffset,
+  }
   for (const [key, value] of Object.entries(fields)) {
     prefixed[key.startsWith("_") ? `req${session.reqCount}${key}` : key] = value
   }
@@ -135,7 +160,15 @@ async function sendLoungeAction(
     gsessionid: session.gsessionid,
     RID: session.rid,
     VER: 8,
-    CVER: 1,
+    v: 2,
+    TYPE: "bind",
+    t: 1,
+    AID: 0,
+    CI: 0,
+    name: SENDER_NAME,
+    id: SENDER_DEVICE_ID,
+    device: SENDER_DEVICE_TYPE,
+    loungeIdToken: session.loungeToken,
   })
   const res = await fetch(`${BIND_URL}?${query}`, {
     method: "POST",
@@ -145,7 +178,12 @@ async function sendLoungeAction(
   if (!res.ok) {
     throw new Error(`YouTube lounge command failed (status ${res.status})`)
   }
-  return { ...session, rid: session.rid + 1, reqCount: session.reqCount + 1 }
+  return {
+    ...session,
+    rid: session.rid + 1,
+    reqCount: session.reqCount + 1,
+    commandOffset: session.commandOffset + 1,
+  }
 }
 
 /** Loads a video immediately, replacing whatever the receiver was doing. */
@@ -161,7 +199,6 @@ export async function setLoungePlaylist(
     _currentIndex: -1,
     _audioOnly: "false",
     _videoId: videoId,
-    count: 1,
   })
 }
 
@@ -171,7 +208,7 @@ export async function addVideoToLoungeQueue(
   videoId: string,
 ): Promise<LoungeSessionState> {
   const bound = await rebindLoungeSession(session)
-  return sendLoungeAction(bound, { __sc: "addVideo", _videoId: videoId, count: 1 })
+  return sendLoungeAction(bound, { __sc: "addVideo", _videoId: videoId })
 }
 
 /** Removes one video from the receiver's own live queue, without touching whatever's currently playing. */
@@ -180,25 +217,18 @@ export async function removeVideoFromLoungeQueue(
   videoId: string,
 ): Promise<LoungeSessionState> {
   const bound = await rebindLoungeSession(session)
-  return sendLoungeAction(bound, { __sc: "removeVideo", _videoId: videoId, count: 1 })
+  return sendLoungeAction(bound, { __sc: "removeVideo", _videoId: videoId })
 }
 
 export async function clearLoungePlaylist(
   session: LoungeSessionState,
 ): Promise<LoungeSessionState> {
   const bound = await rebindLoungeSession(session)
-  return sendLoungeAction(bound, { __sc: "clearPlaylist", _videoId: "", count: 1 })
+  return sendLoungeAction(bound, { __sc: "clearPlaylist", _videoId: "" })
 }
 
 export type LoungeTransportAction = "play" | "pause" | "next" | "previous"
 
-/**
- * Not demonstrated in the reference implementation this file is otherwise
- * based on — these action names are consistently reported across several
- * independent community write-ups of this same protocol, but unverified
- * here against a real device. Likeliest thing to need adjustment once
- * tested live.
- */
 export async function sendLoungeTransportCommand(
   session: LoungeSessionState,
   action: LoungeTransportAction,
@@ -220,6 +250,12 @@ export interface LoungeNowPlaying {
   currentTimeSeconds: number | null
 }
 
+function parseNumeric(value: unknown): number | null {
+  return typeof value === "string" || typeof value === "number"
+    ? Number(value)
+    : null
+}
+
 /**
  * Best-effort poll of the receiver's current state — the least-verified
  * part of this integration. The reference implementation only demonstrates
@@ -227,6 +263,14 @@ export interface LoungeNowPlaying {
  * `nowPlaying` payload's shape is inferred, not confirmed. Returns null on
  * anything unexpected rather than throwing, since this drives a polling
  * loop that must never take the server down.
+ *
+ * A single poll response can contain a batch of several queued events, not
+ * just one — a `nowPlaying` event (carries the video id) and separate
+ * `onStateChange` events (carry fresher playback position for whichever
+ * video `nowPlaying` last identified) can both show up together. This
+ * takes the *last* occurrence of each rather than stopping at the first
+ * match, so a stale, already-superseded event earlier in the batch can't
+ * override a newer one later in it.
  */
 export async function getLoungeNowPlaying(
   session: LoungeSessionState,
@@ -256,19 +300,25 @@ export async function getLoungeNowPlaying(
     if (start === -1) return null
     const events = JSON.parse(text.slice(start)) as Array<[number, [string, unknown]]>
 
+    let result: LoungeNowPlaying | null = null
     for (const event of events) {
       const [key, value] = event[1] ?? []
-      if (key !== "nowPlaying" || !value || typeof value !== "object") continue
+      if (!value || typeof value !== "object") continue
       const data = value as Record<string, unknown>
-      const videoId = typeof data.videoId === "string" ? data.videoId : null
-      const currentTimeRaw = data.currentTime
-      const currentTimeSeconds =
-        typeof currentTimeRaw === "string" || typeof currentTimeRaw === "number"
-          ? Number(currentTimeRaw)
-          : null
-      return { videoId, currentTimeSeconds }
+
+      if (key === "nowPlaying") {
+        result = {
+          videoId: typeof data.videoId === "string" ? data.videoId : null,
+          currentTimeSeconds: parseNumeric(data.currentTime),
+        }
+      } else if (key === "onStateChange" && result) {
+        const currentTimeSeconds = parseNumeric(data.currentTime)
+        if (currentTimeSeconds !== null) {
+          result.currentTimeSeconds = currentTimeSeconds
+        }
+      }
     }
-    return null
+    return result
   } catch {
     return null
   }

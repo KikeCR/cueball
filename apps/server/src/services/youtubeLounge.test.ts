@@ -5,6 +5,7 @@ import {
   clearLoungePlaylist,
   getLoungeNowPlaying,
   getLoungeToken,
+  rebindLoungeSession,
   removeVideoFromLoungeQueue,
   seekLoungeTo,
   sendLoungeTransportCommand,
@@ -24,6 +25,7 @@ const sampleSession: LoungeSessionState = {
   gsessionid: "gsession-1",
   rid: 1,
   reqCount: 0,
+  commandOffset: 0,
 }
 
 afterEach(() => {
@@ -85,6 +87,7 @@ describe("bindLoungeSession", () => {
       gsessionid: "my-gsessionid",
       rid: 1,
       reqCount: 0,
+      commandOffset: 0,
     })
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe(
@@ -134,6 +137,25 @@ describe("startLoungeSession", () => {
   })
 })
 
+describe("rebindLoungeSession", () => {
+  it("carries the running commandOffset across a rebind, even though rid/reqCount reset", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(bindResponseText("new-sid", "new-gsession")),
+      }),
+    )
+
+    const rebound = await rebindLoungeSession({ ...sampleSession, commandOffset: 7 })
+
+    expect(rebound.commandOffset).toBe(7)
+    expect(rebound.rid).toBe(1)
+    expect(rebound.reqCount).toBe(0)
+    expect(rebound.sid).toBe("new-sid")
+  })
+})
+
 describe("lounge commands", () => {
   function stubRebindThenAction() {
     const fetchMock = vi.fn().mockResolvedValue({
@@ -152,14 +174,15 @@ describe("lounge commands", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     const [actionUrl, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(actionUrl).toBe(
-      "https://www.youtube.com/api/lounge/bc/bind?SID=sid-1&gsessionid=gsession-1&RID=1&VER=8&CVER=1",
+      "https://www.youtube.com/api/lounge/bc/bind?SID=sid-1&gsessionid=gsession-1&RID=1&VER=8&v=2&TYPE=bind&t=1&AID=0&CI=0&name=CueBall&id=cueballcueballcueballcueba&device=REMOTE_CONTROL&loungeIdToken=lounge-token",
     )
     const body = new URLSearchParams(actionInit.body as string)
+    expect(body.get("count")).toBe("1")
+    expect(body.get("ofs")).toBe("0")
     expect(body.get("req0__sc")).toBe("setPlaylist")
     expect(body.get("req0_videoId")).toBe("dQw4w9WgXcQ")
     expect(body.get("req0_listId")).toBe("")
     expect(body.get("req0_currentIndex")).toBe("-1")
-    expect(body.get("count")).toBe("1")
   })
 
   it("addVideoToLoungeQueue sends addVideo", async () => {
@@ -194,7 +217,7 @@ describe("lounge commands", () => {
     expect(body.get("req0__sc")).toBe("clearPlaylist")
   })
 
-  it("sendLoungeTransportCommand sends the given action", async () => {
+  it("sendLoungeTransportCommand sends the given action with count and ofs, unlike the original version of this file", async () => {
     const fetchMock = stubRebindThenAction()
 
     await sendLoungeTransportCommand(sampleSession, "pause")
@@ -202,6 +225,8 @@ describe("lounge commands", () => {
     const [, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     const body = new URLSearchParams(actionInit.body as string)
     expect(body.get("req0__sc")).toBe("pause")
+    expect(body.get("count")).toBe("1")
+    expect(body.get("ofs")).toBe("0")
   })
 
   it("seekLoungeTo sends seekTo with the target time", async () => {
@@ -243,6 +268,34 @@ describe("getLoungeNowPlaying", () => {
     const result = await getLoungeNowPlaying(sampleSession)
 
     expect(result).toEqual({ videoId: "dQw4w9WgXcQ", currentTimeSeconds: 12.5 })
+  })
+
+  it("uses a later onStateChange event's time to refresh a nowPlaying event earlier in the same batch", async () => {
+    const raw =
+      '[[0,["nowPlaying",{"videoId":"dQw4w9WgXcQ","currentTime":"12.5"}]],' +
+      '[1,["onStateChange",{"currentTime":"45.2","state":"1"}]]]'
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(raw) }),
+    )
+
+    const result = await getLoungeNowPlaying(sampleSession)
+
+    expect(result).toEqual({ videoId: "dQw4w9WgXcQ", currentTimeSeconds: 45.2 })
+  })
+
+  it("takes the last nowPlaying event in a batch, not the first", async () => {
+    const raw =
+      '[[0,["nowPlaying",{"videoId":"old-video","currentTime":"200"}]],' +
+      '[1,["nowPlaying",{"videoId":"new-video","currentTime":"0"}]]]'
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(raw) }),
+    )
+
+    const result = await getLoungeNowPlaying(sampleSession)
+
+    expect(result).toEqual({ videoId: "new-video", currentTimeSeconds: 0 })
   })
 
   it("returns null when there's no nowPlaying event", async () => {

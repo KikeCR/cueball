@@ -23,6 +23,7 @@ const sampleState: LoungeSessionState = {
   gsessionid: "gsession-1",
   rid: 3,
   reqCount: 2,
+  commandOffset: 4,
 }
 
 describe("castLoungeSession", () => {
