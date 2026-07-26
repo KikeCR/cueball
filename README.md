@@ -2,16 +2,19 @@
 
 A shared watch-party queue for YouTube. Everyone in a room adds videos from
 their own phone/laptop and votes on what plays next; the queue's order
-stays synced in real time, and (optionally) mirrors a real YouTube
-playlist the host can just open on their TV.
+stays synced in real time, and plays on a TV either by mirroring a real
+YouTube playlist or by casting directly to it.
 
 Built as a portfolio piece focused on real-time systems and WebSocket
 architecture (React + Node.js), with a guest-first, two-tier auth model.
 
-> Status: rooms (create/join/presence), queue + live voting, YouTube
-> playlist sync, and optional real accounts (email/password, with room
-> history) are all working end to end. The guest/participant flow still
-> works fully without an account.
+> Status: rooms (create/join/presence), queue + live voting, and two room
+> modes — real YouTube playlist sync, or casting straight to a TV via
+> YouTube's own (undocumented) Lounge API, either through Chromecast or a
+> manual TV pairing code that works from any device running the YouTube
+> app, including iOS — are all working end to end, alongside optional real
+> accounts (email/password or Google, with room history). The
+> guest/participant flow still works fully without an account.
 
 ## How it works
 
@@ -24,23 +27,36 @@ architecture (React + Node.js), with a guest-first, two-tier auth model.
 - The host can remove a participant (e.g. a duplicate from someone
   rejoining on another device), which disconnects them from the room
   immediately.
-- The host can optionally connect their YouTube account (OAuth). CueBall
-  then creates a real, unlisted YouTube playlist for the room and keeps it
-  in sync as the queue changes, so the actual video can just play from the
-  native YouTube app on a TV, with a link and QR code shown in the room
-  for anyone to open it directly.
+- A signed-in-or-not host picks the room's mode up front:
+  - **Playlist mode**: the host can optionally connect their YouTube
+    account (OAuth). CueBall then creates a real, unlisted YouTube
+    playlist for the room and keeps it in sync as the queue changes, so
+    the actual video can just play from the native YouTube app on a TV,
+    with a link and QR code shown in the room for anyone to open it
+    directly.
+  - **Cast mode**: the host connects a TV directly from the room, either
+    via the Chromecast sender SDK or by entering the pairing code the
+    YouTube app shows under Settings → "Link with TV code" (the second
+    method works on any device running the YouTube app — Roku, smart TVs,
+    game consoles — and from any browser, including iOS Safari, since it
+    doesn't touch the Cast SDK at all). Both connect to the same
+    server-driven control layer built on YouTube's own Lounge API (the
+    private protocol behind "YouTube on TV" remote control), which pushes
+    the queue to the TV, advances it automatically as videos finish, and
+    can optionally loop the whole watched history once everything's
+    played (the "repeat the queue" toggle).
 - Presence (who's connected right now) is tracked in Redis so reconnecting
   is instant and doesn't lose your spot in the room.
 - Signing up (email/password, or "Continue with Google") is optional. It
   links your name to rooms you create or join, so you get a "your rooms"
   history to jump back into, but it's never required to use the app.
 
-Earlier drafts of this project explored two other approaches for the
-"plays on the TV" part: embedding a YouTube IFrame Player synced across
-every browser via a playback heartbeat, and driving a Chromecast session
-via the Cast SDK. We landed on real playlist sync instead, since it's the
-simplest approach that actually matches the intended use case (add from
-your phone, play from the TV's own YouTube app).
+An earlier draft of this project explored a third approach for the "plays
+on the TV" part: embedding a YouTube IFrame Player synced across every
+browser via a playback heartbeat. That was dropped in favor of the two
+modes above, which each hand playback off to a real YouTube surface (the
+TV's own app, in both cases) instead of trying to keep an embedded player
+in sync by hand.
 
 ## Tech stack
 
@@ -52,8 +68,11 @@ your phone, play from the TV's own YouTube app).
   hand-integrated shadcn-style UI kit, `lucide-react` icons
 - **Video**: YouTube only. Pasted links are resolved via the oEmbed
   endpoint for the in-app queue, checked against a 12-minute length cap
-  via the YouTube Data API v3 (API key, optional), and optionally synced
-  to a real playlist via the same Data API (OAuth)
+  via the YouTube Data API v3 (API key, optional), and either synced to a
+  real playlist via the same Data API (OAuth, Playlist mode) or driven
+  directly on a TV via YouTube's own undocumented Lounge API (Cast mode) —
+  the same private protocol the official YouTube mobile/TV apps use to
+  remote-control a TV's YouTube app
 - **Auth**: guests join with a nickname only (JWT-based participant
   session token for reconnect); optional real accounts (email/password
   bcrypt-hashed, or Google sign-in, both issuing the same JWT session
@@ -66,16 +85,20 @@ your phone, play from the TV's own YouTube app).
 apps/
   server/
     src/
-      sockets/         room, queue, and YouTube playlist-sync handlers
+      sockets/         room, queue, and YouTube playlist-sync handlers;
+                       cast.ts/castLoungePolling.ts drive Cast mode
       routes/          REST endpoints (room create/preview, YouTube OAuth)
-      services/        room/queue services, YouTube oEmbed + Data API + OAuth
-      redis/           Redis client, presence tracking
+      services/        room/queue services, YouTube oEmbed + Data API +
+                       OAuth, and youtubeLounge.ts (the Lounge API client)
+      redis/           Redis client, presence tracking, Cast session state
     prisma/            schema.prisma, migrations
   web/
     app/               Next.js App Router pages
     components/        one folder per component (Component.tsx + test + index.ts)
       ui/              small shadcn-style primitives (Button, Card, Input...)
+      CastControlsCard/  Cast mode's connect/control UI
     context/           RoomContext (socket lifecycle), ThemeContext
+    hooks/             useCastSender (Cast SDK + TV-code pairing)
     api/               REST client
     utils/             helpers (session storage, JWT decode, cn())
 packages/
@@ -179,13 +202,23 @@ length are allowed through, rather than blocking adds altogether.
 - **User** (optional account): email, display name, password hash (null
   for Google-only accounts); can host or join rooms, which then show up
   in that account's room history
-- **Room**: join code, host, YouTube playlist + OAuth tokens (once
-  connected)
+- **Room**: join code, host, mode (`PLAYLIST` or `CAST`), YouTube playlist
+  + OAuth tokens (Playlist mode, once connected), `manualQueueOrder` (set
+  once a host drag-reorders, switching ordering from vote score to an
+  explicit position) and `repeatEnabled` (loop the played history once
+  the queue empties)
 - **Participant**: a user or guest attached to a room
 - **QueueItem**: a queued YouTube video, added by a participant, with a
-  vote-derived score and (once synced) its YouTube playlist item id
+  vote-derived score, an explicit `position` (used once `manualQueueOrder`
+  is on), `playedAt`, and (once synced, Playlist mode) its YouTube
+  playlist item id
 - **Vote**: one participant's +1/-1 on a queue item (unique per
   participant per item)
+
+A Cast-mode room's live TV session itself (which screen it's bound to,
+what's currently playing) isn't in Postgres at all — it's ephemeral Redis
+state (`redis/castSession.ts`, `redis/castLoungeSession.ts`), rebuilt each
+time a host connects a TV rather than persisted.
 
 See [`apps/server/prisma/schema.prisma`](apps/server/prisma/schema.prisma)
 for the full schema.

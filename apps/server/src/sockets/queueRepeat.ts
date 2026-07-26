@@ -2,6 +2,7 @@ import type { Room } from "@prisma/client"
 import {
   commitQueueRepeatRestart,
   findRepeatRestartItems,
+  type QueueItemWithVotes,
 } from "../services/queueService.js"
 import { addVideoToPlaylist } from "../services/youtubePlaylist.js"
 
@@ -14,26 +15,34 @@ import { addVideoToPlaylist } from "../services/youtubePlaylist.js"
  * resets items back to unplayed once they're confirmed back on the real
  * playlist. Anything that fails (e.g. quota) stays in played history rather
  * than the app claiming a state the real playlist doesn't have.
+ *
+ * Returns whatever actually got restarted (playedAt-ascending, so index 0
+ * is what should play next), so a Cast-mode caller can push it onto the
+ * live Lounge queue itself — resetting the DB back to unplayed doesn't make
+ * a real YouTube playlist auto-play, and Cast rooms don't have one anyway.
  */
 export async function restartQueueIfRepeating(
   room: Room,
   roomId: string,
-): Promise<void> {
+): Promise<QueueItemWithVotes[]> {
   const restart = await findRepeatRestartItems({
     roomId,
     repeatEnabled: room.repeatEnabled,
   })
-  if ("noop" in restart) return
+  if ("noop" in restart) return []
 
   const readyIds: string[] = []
+  const ready: QueueItemWithVotes[] = []
   for (const item of restart.items) {
     if (!room.youtubePlaylistId) {
       readyIds.push(item.id)
+      ready.push(item)
       continue
     }
     try {
       await addVideoToPlaylist(room, item)
       readyIds.push(item.id)
+      ready.push(item)
     } catch (err) {
       console.error(
         `Failed to re-add video to YouTube playlist while repeating room ${roomId}`,
@@ -43,4 +52,5 @@ export async function restartQueueIfRepeating(
   }
 
   await commitQueueRepeatRestart({ roomId, queueItemIds: readyIds })
+  return ready
 }

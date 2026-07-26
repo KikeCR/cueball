@@ -1,14 +1,21 @@
 import type { Server } from "socket.io"
 import { redis } from "../redis/client.js"
 import { getCastState, setCastState } from "../redis/castSession.js"
-import { getLoungeSessionState } from "../redis/castLoungeSession.js"
+import {
+  getLoungeSessionState,
+  setLoungeSessionState,
+} from "../redis/castLoungeSession.js"
 import {
   commitQueueItemPlayed,
   findQueueItemForPlayedToggle,
 } from "../services/queueService.js"
 import { getRoomState } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
-import { getLoungeNowPlaying } from "../services/youtubeLounge.js"
+import {
+  addVideoToLoungeQueue,
+  getLoungeNowPlaying,
+  setLoungePlaylist,
+} from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
@@ -33,8 +40,13 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
   const lounge = await getLoungeSessionState(roomId)
   if (!lounge) return
 
+  // Null here means no event arrived in this poll at all — try again next
+  // tick. That's different from `nowPlaying.videoId` itself being null,
+  // which means an event *did* arrive and it's explicitly reporting
+  // nothing playing (see getLoungeNowPlaying's doc comment) — a real signal
+  // this function needs to react to, not skip.
   const nowPlaying = await getLoungeNowPlaying(lounge)
-  if (!nowPlaying?.videoId) return
+  if (!nowPlaying) return
 
   const cast = await getCastState(roomId)
   if (!cast) return
@@ -46,15 +58,18 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
     (item) => item.id === cast.currentQueueItemId,
   )
 
-  // Same video still playing — nothing to reconcile. Play/pause state is
-  // owned by the CastCommand handler (the receiver doesn't reliably report
-  // it back), not by this poller.
-  if (currentItem?.youtubeVideoId === nowPlaying.videoId) return
+  // Nothing to reconcile: still reporting the same video we already have
+  // tracked, or (once idle) still reporting nothing, either way unchanged
+  // since the last poll. Play/pause state is owned by the CastCommand
+  // handler (the receiver doesn't reliably report it back), not by this
+  // poller.
+  if ((currentItem?.youtubeVideoId ?? null) === nowPlaying.videoId) return
 
   // The video changed — either it finished naturally and the receiver
-  // auto-advanced into the next one on its own, or a skip command landed.
-  // Either way, mark whatever was playing before as played, the same as
-  // the manual "mark played" flow does.
+  // auto-advanced into the next one on its own, a skip command landed, or
+  // it ran out of its own queued videos and stopped (nowPlaying.videoId
+  // null). Either way, mark whatever was playing before as played, the
+  // same as the manual "mark played" flow does.
   if (currentItem) {
     const found = await findQueueItemForPlayedToggle({
       queueItemId: currentItem.id,
@@ -69,11 +84,42 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
         roomId,
         played: true,
       })
-      const room = await prisma.room.findUnique({ where: { id: roomId } })
-      if (room) await restartQueueIfRepeating(room, roomId)
     }
   }
 
+  const room = await prisma.room.findUnique({ where: { id: roomId } })
+  const restarted = room ? await restartQueueIfRepeating(room, roomId) : []
+
+  if (nowPlaying.videoId === null) {
+    // The receiver stopped on its own with nothing left in its live queue
+    // to auto-advance into — it won't start playing again by itself, even
+    // once repeat has reset the history back to unplayed in our DB. Push
+    // the restarted lap onto the Lounge queue ourselves, the same way
+    // bootstrapCastSession does when a Cast session first connects.
+    const [upNext, ...rest] = restarted
+    if (upNext) {
+      let session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+      for (const item of rest) {
+        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      }
+      await setLoungeSessionState(roomId, session)
+      await setCastState(roomId, {
+        ...cast,
+        currentQueueItemId: upNext.id,
+        isPlaying: true,
+      })
+    } else {
+      await setCastState(roomId, {
+        ...cast,
+        currentQueueItemId: null,
+        isPlaying: false,
+      })
+    }
+    await broadcastRoomState(io, roomId)
+    return
+  }
+
+  // Ordinary case: the receiver auto-advanced into a new video on its own.
   const refreshedState = await getRoomState(roomId)
   const nextItem = refreshedState?.queue.find(
     (item) => item.youtubeVideoId === nowPlaying.videoId,

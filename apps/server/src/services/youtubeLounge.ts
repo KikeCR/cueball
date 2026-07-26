@@ -286,6 +286,17 @@ export async function seekLoungeTo(
 }
 
 export interface LoungeNowPlaying {
+  /**
+   * Null covers two distinct things the receiver reports the same way: the
+   * `videoId` field arriving empty. When the receiver runs out of its own
+   * queued videos to auto-advance into (nothing left to play), it emits a
+   * `nowPlaying` event with `state: "-1"` and no `videoId` at all, rather
+   * than just going quiet — that's the only signal this integration gets
+   * for "playback stopped with nothing next," so a caller needs to be able
+   * to tell "an event arrived saying nothing is playing" (this field null)
+   * apart from "no event arrived this poll at all" (the whole return value
+   * null, see below).
+   */
   videoId: string | null
 }
 
@@ -297,7 +308,9 @@ export interface LoungeNowPlaying {
  * anything unexpected rather than throwing, since this drives a polling
  * loop that must never take the server down. Only the video id is tracked —
  * play/pause state and playback position aren't surfaced anywhere in the
- * app, so there's no need to parse the timing-related event data at all.
+ * app, so there's no need to parse the timing-related event data at all,
+ * beyond noticing when `videoId` itself comes back empty (see
+ * `LoungeNowPlaying.videoId`'s doc comment).
  *
  * A single poll response can contain a batch of several queued events, not
  * just one — this takes the *last* `nowPlaying` occurrence rather than
@@ -337,7 +350,11 @@ export async function getLoungeNowPlaying(
       const [key, value] = event[1] ?? []
       if (key !== "nowPlaying" || !value || typeof value !== "object") continue
       const data = value as Record<string, unknown>
-      result = { videoId: typeof data.videoId === "string" ? data.videoId : null }
+      const videoId =
+        typeof data.videoId === "string" && data.videoId.length > 0
+          ? data.videoId
+          : null
+      result = { videoId }
     }
     return result
   } catch {
