@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { Users, ListVideo, Plus, Youtube, Cast, Loader2, Trash2 } from "lucide-react"
-import type { ConfigResponse, RoomPreview } from "@cueball/shared"
+import { CAST_MODE, type ConfigResponse, type RoomPreview } from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
 import { useToast } from "../../../context/ToastContext"
@@ -216,7 +216,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
         </div>
       </div>
 
-      {!(room?.mode === "cast" && cast?.connected) && (
+      {room?.mode !== CAST_MODE && (
         <div className="mb-5">
           <NowPlayingBanner
             item={nowPlayingItem}
@@ -230,7 +230,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
 
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-3">
-          {room?.mode === "cast" ? (
+          {room?.mode === CAST_MODE ? (
             <>
               <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
                 <Cast className="size-3.5" /> Cast to TV
@@ -281,7 +281,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
           <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             <Plus className="size-3.5" /> Add a video
           </h2>
-          {room?.mode === "cast" || room?.youtubePlaylistId ? (
+          {room?.mode === CAST_MODE || room?.youtubePlaylistId ? (
             <AddVideoForm />
           ) : (
             <p className="text-sm text-muted">
@@ -320,6 +320,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
             repeatEnabled={Boolean(room?.repeatEnabled)}
             onSetRepeat={handleSetRepeat}
             reordering={reordering}
+            excludeQueueItemId={
+              room?.mode === CAST_MODE ? (cast?.currentQueueItemId ?? null) : null
+            }
           />
         </Card>
       </div>

@@ -1,5 +1,8 @@
 export type RoomMode = "playlist" | "cast"
 
+export const PLAYLIST_MODE: RoomMode = "playlist"
+export const CAST_MODE: RoomMode = "cast"
+
 export interface Room {
   id: string
   code: string

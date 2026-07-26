@@ -16,6 +16,7 @@ interface QueueListProps {
   repeatEnabled?: boolean
   onSetRepeat?: (enabled: boolean) => void
   reordering?: boolean
+  excludeQueueItemId?: string | null
 }
 
 export class QueueListPageObject {

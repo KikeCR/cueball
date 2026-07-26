@@ -1,4 +1,5 @@
 import type { Server } from "socket.io"
+import { RoomMode } from "@prisma/client"
 import {
   MAX_VIDEO_DURATION_SECONDS,
   SocketEvents,
@@ -76,7 +77,7 @@ export function registerQueueHandlers(io: Server): void {
         // silently queuing videos in-app that never make it to the TV.
         // Cast-mode rooms never have (or need) a playlist — the Cast SDK
         // loads videos directly by id — so this doesn't apply to them.
-        if (room.mode !== "CAST" && !room.youtubePlaylistId) {
+        if (room.mode !== RoomMode.CAST && !room.youtubePlaylistId) {
           ack?.({
             error: "Ask the host to connect YouTube before adding videos",
           })
@@ -147,7 +148,7 @@ export function registerQueueHandlers(io: Server): void {
         // the app queue until someone reconnects — either as the first
         // thing to play (nothing loaded yet) or appended to the receiver's
         // own live queue (something already is).
-        if (room.mode === "CAST") {
+        if (room.mode === RoomMode.CAST) {
           try {
             const lounge = await getLoungeSessionState(roomId)
             if (lounge) {
@@ -307,10 +308,18 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
+          // A Cast-mode room's currently-playing item is tracked separately
+          // (cast.currentQueueItemId) from "unplayed" — it's already on the
+          // TV, not something waiting its turn, so it's excluded from
+          // reordering entirely rather than being just another queue row.
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          const cast = room?.mode === RoomMode.CAST ? await getCastState(roomId) : null
+
           const prepared = await prepareQueueReorder({
             roomId,
             isHost: participant.isHost,
             orderedQueueItemIds: payload.orderedQueueItemIds ?? [],
+            excludeQueueItemId: cast?.currentQueueItemId ?? null,
           })
           if ("error" in prepared) {
             ack?.({ error: prepared.error })
@@ -320,7 +329,6 @@ export function registerQueueHandlers(io: Server): void {
           // Confirm the real playlist accepts the new order before
           // committing it in-app — a drag that silently didn't land on
           // YouTube's side would otherwise look identical to one that did.
-          const room = await prisma.room.findUnique({ where: { id: roomId } })
           if (room?.youtubePlaylistId) {
             try {
               await syncPlaylistOrderForItems(room, prepared.items)
@@ -350,23 +358,21 @@ export function registerQueueHandlers(io: Server): void {
           // currently playing, which is left untouched. Best-effort: the
           // in-app order is already correct regardless of whether this
           // lands.
-          if (room?.mode === "CAST") {
+          if (room?.mode === RoomMode.CAST) {
             try {
               const lounge = await getLoungeSessionState(roomId)
               if (lounge) {
-                const cast = await getCastState(roomId)
-                const upcoming = prepared.items.filter(
-                  (item) => item.id !== cast?.currentQueueItemId,
-                )
-
+                // prepared.items already excludes the currently-playing
+                // item (see excludeQueueItemId above), so this is exactly
+                // the receiver's "upcoming" queue.
                 let session = lounge
-                for (const item of upcoming) {
+                for (const item of prepared.items) {
                   session = await removeVideoFromLoungeQueue(
                     session,
                     item.youtubeVideoId,
                   )
                 }
-                for (const item of upcoming) {
+                for (const item of prepared.items) {
                   session = await addVideoToLoungeQueue(
                     session,
                     item.youtubeVideoId,
@@ -488,9 +494,13 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+          const cast = room?.mode === RoomMode.CAST ? await getCastState(roomId) : null
+
           const found = await findClearableQueueItems({
             roomId,
             isHost: participant.isHost,
+            excludeQueueItemId: cast?.currentQueueItemId ?? null,
           })
           if ("error" in found) {
             ack?.({ error: found.error })
@@ -509,7 +519,6 @@ export function registerQueueHandlers(io: Server): void {
           // fail in the queue — so the app never claims a video is gone
           // when it's still sitting in the actual playlist.
           let clearableIds = found.items.map((item) => item.id)
-          const room = await prisma.room.findUnique({ where: { id: roomId } })
           if (room?.youtubePlaylistId) {
             const withPlaylistItem = found.items.filter(
               (item) => item.youtubePlaylistItemId,

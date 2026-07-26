@@ -34,6 +34,8 @@ interface QueueListProps {
   onSetRepeat?: (enabled: boolean) => void
   /** True while a drag-reorder is being confirmed against the real YouTube playlist. */
   reordering?: boolean
+  /** A Cast-mode room's currently-playing item — already on the TV, so it's hidden from the queue rather than shown as just another upcoming video. Always null for playlist-sync rooms. */
+  excludeQueueItemId?: string | null
 }
 
 export function QueueList({
@@ -49,6 +51,7 @@ export function QueueList({
   repeatEnabled = false,
   onSetRepeat,
   reordering = false,
+  excludeQueueItemId = null,
 }: QueueListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -70,7 +73,9 @@ export function QueueList({
   const canReorder = Boolean(self?.isHost && onReorder) && !reordering
   const votingLocked = manualOrderActive && !self?.isHost
 
-  const upcoming = queue.filter((item) => !item.playedAt)
+  const upcoming = queue.filter(
+    (item) => !item.playedAt && item.id !== excludeQueueItemId,
+  )
   const played = queue.filter((item) => item.playedAt)
 
   const handleDragEnd = (event: DragEndEvent) => {
