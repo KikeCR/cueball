@@ -314,7 +314,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
             onVote={handleVote}
             onRemove={handleRemove}
             onReorder={handleReorder}
-            onSetPlayed={handleSetPlayed}
+            onSetPlayed={
+              room?.mode === CAST_MODE ? undefined : handleSetPlayed
+            }
             onClearHistory={() => setClearHistoryDialogOpen(true)}
             manualOrderActive={Boolean(room?.manualQueueOrder)}
             repeatEnabled={Boolean(room?.repeatEnabled)}
