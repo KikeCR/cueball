@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: Server (typecheck + tests)
+    runs-on: ubuntu-latest
+    env:
+      # Only needed for `prisma generate`, which reads the schema but never
+      # connects — the test suite mocks the Prisma client entirely, so no
+      # real database is needed in CI.
+      DATABASE_URL: postgresql://user:password@localhost:5432/cueball
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build shared package
+        run: npm run build --workspace=packages/shared
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace=apps/server
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=apps/server
+
+      - name: Test
+        run: npm test --workspace=apps/server
+
+  web:
+    name: Web (typecheck + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build shared package
+        run: npm run build --workspace=packages/shared
+
+      - name: Typecheck
+        run: npm run typecheck --workspace=apps/web
+
+      - name: Test
+        run: npm test --workspace=apps/web
