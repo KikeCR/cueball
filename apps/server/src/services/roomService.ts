@@ -187,6 +187,41 @@ export async function sweepExpiredRooms(
   return deletedCount
 }
 
+export type FindDeletableRoomResult =
+  | { room: Room }
+  | { error: string; status: 403 | 404 | 409 }
+
+/**
+ * Only the original host may delete a room, and only while nobody's
+ * currently connected to it. Doesn't delete anything yet — mirrors the
+ * find/commit split used elsewhere (e.g. queueService's remove/reorder) so
+ * the caller can attempt a best-effort real-playlist cleanup in between
+ * (see deletePlaylistForRoom in youtubePlaylist.ts) without this file
+ * needing to depend on that one.
+ */
+export async function findDeletableRoom(params: {
+  roomCode: string
+  userId: string
+}): Promise<FindDeletableRoomResult> {
+  const room = await prisma.room.findUnique({ where: { code: params.roomCode } })
+  if (!room) {
+    return { error: "Room not found", status: 404 }
+  }
+  if (room.hostUserId !== params.userId) {
+    return { error: "Only the original host can delete this room", status: 403 }
+  }
+  const connected = await getConnectedParticipantIds(room.id)
+  if (connected.size > 0) {
+    return { error: "Can't delete a room with people currently in it", status: 409 }
+  }
+  return { room }
+}
+
+/** Deletes a room already confirmed deletable — Participants/QueueItems/Votes cascade. */
+export async function commitRoomDeletion(roomId: string): Promise<void> {
+  await prisma.room.delete({ where: { id: roomId } })
+}
+
 export async function getUserRoomHistory(userId: string): Promise<
   Array<{
     id: string

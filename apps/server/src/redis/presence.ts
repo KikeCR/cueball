@@ -1,31 +1,26 @@
-import { redis } from "./client.js"
+import { getIo } from "../realtime.js"
 
-function presenceKey(roomId: string): string {
-  return `room:${roomId}:presence`
-}
-
-/** Tracks connection count per participant so multiple tabs/reconnects don't drop presence early. */
-export async function markConnected(
-  roomId: string,
-  participantId: string,
-): Promise<void> {
-  await redis.hincrby(presenceKey(roomId), participantId, 1)
-}
-
-export async function markDisconnected(
-  roomId: string,
-  participantId: string,
-): Promise<void> {
-  const key = presenceKey(roomId)
-  const remaining = await redis.hincrby(key, participantId, -1)
-  if (remaining <= 0) {
-    await redis.hdel(key, participantId)
-  }
-}
-
+/**
+ * Derived directly from socket.io's own live connection state (same
+ * `fetchSockets()` the ParticipantRemove handler already uses), rather than
+ * hand-rolled bookkeeping in Redis — a manually-maintained counter has no
+ * way to self-correct if the server process restarts mid-connection (every
+ * `markDisconnected` call it was waiting for is simply never coming), which
+ * left rooms permanently stuck showing "someone's connected" after any dev
+ * restart. Live socket state can't leak this way: a fresh process starts
+ * with zero sockets, period.
+ */
 export async function getConnectedParticipantIds(
   roomId: string,
 ): Promise<Set<string>> {
-  const counts = await redis.hgetall(presenceKey(roomId))
-  return new Set(Object.keys(counts).filter((id) => Number(counts[id]) > 0))
+  const io = getIo()
+  if (!io) return new Set()
+
+  const sockets = await io.in(roomId).fetchSockets()
+  const ids = new Set<string>()
+  for (const socket of sockets) {
+    const participantId = socket.data.participantId as string | undefined
+    if (participantId) ids.add(participantId)
+  }
+  return ids
 }

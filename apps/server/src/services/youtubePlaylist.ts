@@ -18,6 +18,9 @@ export function describeYoutubePlaylistError(err: unknown): string {
   if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
     return "YouTube's daily API limit has been reached. This resets automatically — try again later."
   }
+  if (reason === "SERVICE_UNAVAILABLE") {
+    return "YouTube's playlist service is temporarily busy. Try again in a moment."
+  }
   return "Ask the host to check their YouTube connection."
 }
 
@@ -80,12 +83,24 @@ export async function removeVideoFromPlaylist(
   await youtube.playlistItems.delete({ id: playlistItemId })
 }
 
+/** Deletes the real playlist itself (e.g. when the room it belongs to is deleted). */
+export async function deletePlaylistForRoom(room: Room): Promise<void> {
+  if (!room.youtubePlaylistId) return
+  const youtube = getAuthorizedYoutubeClient(room)
+  await youtube.playlists.delete({ id: room.youtubePlaylistId })
+}
+
 /**
  * Naive full resync: fine for a demo-sized queue, would want move-diffing to
  * stay under quota at scale. Takes the order explicitly rather than reading
  * it from the DB, so a caller can confirm the real playlist accepts a
  * reorder *before* committing it in-app (see queueService's prepare/commit
  * split for reorder and remove).
+ *
+ * Updates are sent one at a time, not in parallel: YouTube's
+ * playlistItems.update doesn't handle concurrent position writes to the
+ * same playlist safely — sending them all at once reliably produces 409
+ * Conflict / SERVICE_UNAVAILABLE responses instead of applying the reorder.
  */
 export async function syncPlaylistOrderForItems(
   room: Room,
@@ -103,21 +118,19 @@ export async function syncPlaylistOrderForItems(
   if (syncedItems.length === 0) return
 
   const youtube = getAuthorizedYoutubeClient(room)
-  await Promise.all(
-    syncedItems.map((item, index) =>
-      youtube.playlistItems.update({
-        part: ["snippet"],
-        requestBody: {
-          id: item.youtubePlaylistItemId,
-          snippet: {
-            playlistId,
-            position: index,
-            resourceId: { kind: "youtube#video", videoId: item.youtubeVideoId },
-          },
+  for (const [index, item] of syncedItems.entries()) {
+    await youtube.playlistItems.update({
+      part: ["snippet"],
+      requestBody: {
+        id: item.youtubePlaylistItemId,
+        snippet: {
+          playlistId,
+          position: index,
+          resourceId: { kind: "youtube#video", videoId: item.youtubeVideoId },
         },
-      }),
-    ),
-  )
+      },
+    })
+  }
 }
 
 /** Resyncs the real playlist order from the DB's current score/position state (used by the debounced vote-driven sync). */

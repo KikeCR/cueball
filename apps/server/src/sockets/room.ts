@@ -11,7 +11,6 @@ import {
   type RoomJoinResult,
   type RoomStatePayload,
 } from "@cueball/shared"
-import { markConnected, markDisconnected } from "../redis/presence.js"
 import { clearCastState, getCastState } from "../redis/castSession.js"
 import {
   addParticipant,
@@ -42,7 +41,6 @@ async function reconnect(
   socket.data.participantId = participant.id
   socket.data.roomId = roomId
   await socket.join(roomId)
-  await markConnected(roomId, participant.id)
   await touchRoomActivity(roomId)
   return true
 }
@@ -50,8 +48,6 @@ async function reconnect(
 async function leaveCurrentRoom(io: Server, socket: RoomSocket): Promise<void> {
   const { participantId, roomId } = socket.data
   if (!participantId || !roomId) return
-
-  await markDisconnected(roomId, participantId)
 
   // The host's browser is the only client ever bound to a live Cast
   // session; if they leave (tab closed, connection dropped) without
@@ -120,7 +116,6 @@ export function registerRoomHandlers(io: Server): void {
           socket.data.participantId = participant.id
           socket.data.roomId = room.id
           await socket.join(room.id)
-          await markConnected(room.id, participant.id)
 
           const state = await getRoomState(room.id)
           const self = state?.participants.find((p) => p.id === participant.id)

@@ -1,62 +1,67 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("./client.js", () => ({
-  redis: {
-    hincrby: vi.fn(),
-    hdel: vi.fn(),
-    hgetall: vi.fn(),
-  },
+vi.mock("../realtime.js", () => ({
+  getIo: vi.fn(),
 }))
 
-import { redis } from "./client.js"
-import {
-  getConnectedParticipantIds,
-  markConnected,
-  markDisconnected,
-} from "./presence.js"
+import { getIo } from "../realtime.js"
+import { getConnectedParticipantIds } from "./presence.js"
 
-describe("presence", () => {
+function fakeIo(sockets: Array<{ data: { participantId?: string } }>) {
+  return {
+    in: () => ({
+      fetchSockets: () => Promise.resolve(sockets),
+    }),
+  }
+}
+
+describe("getConnectedParticipantIds", () => {
   beforeEach(() => {
-    vi.mocked(redis.hincrby).mockReset()
-    vi.mocked(redis.hdel).mockReset()
-    vi.mocked(redis.hgetall).mockReset()
+    vi.mocked(getIo).mockReset()
   })
 
-  it("increments the connection count on connect", async () => {
-    await markConnected("room-1", "participant-1")
-    expect(redis.hincrby).toHaveBeenCalledWith(
-      "room:room-1:presence",
-      "participant-1",
-      1,
+  it("returns an empty set when the io server isn't available yet", async () => {
+    vi.mocked(getIo).mockReturnValue(undefined)
+    const connected = await getConnectedParticipantIds("room-1")
+    expect(connected).toEqual(new Set())
+  })
+
+  it("returns the participant ids of every currently-connected socket in the room", async () => {
+    vi.mocked(getIo).mockReturnValue(
+      fakeIo([
+        { data: { participantId: "participant-1" } },
+        { data: { participantId: "participant-2" } },
+      ]) as never,
     )
+
+    const connected = await getConnectedParticipantIds("room-1")
+    expect(connected).toEqual(new Set(["participant-1", "participant-2"]))
   })
 
-  it("decrements on disconnect but keeps the field while other tabs are still connected", async () => {
-    vi.mocked(redis.hincrby).mockResolvedValue(1)
-    await markDisconnected("room-1", "participant-1")
-    expect(redis.hincrby).toHaveBeenCalledWith(
-      "room:room-1:presence",
-      "participant-1",
-      -1,
+  it("dedupes multiple sockets (tabs) for the same participant", async () => {
+    vi.mocked(getIo).mockReturnValue(
+      fakeIo([
+        { data: { participantId: "participant-1" } },
+        { data: { participantId: "participant-1" } },
+      ]) as never,
     )
-    expect(redis.hdel).not.toHaveBeenCalled()
-  })
 
-  it("removes the field once the last tab disconnects", async () => {
-    vi.mocked(redis.hincrby).mockResolvedValue(0)
-    await markDisconnected("room-1", "participant-1")
-    expect(redis.hdel).toHaveBeenCalledWith(
-      "room:room-1:presence",
-      "participant-1",
-    )
-  })
-
-  it("only reports participants with a positive connection count", async () => {
-    vi.mocked(redis.hgetall).mockResolvedValue({
-      "participant-1": "2",
-      "participant-2": "0",
-    })
     const connected = await getConnectedParticipantIds("room-1")
     expect(connected).toEqual(new Set(["participant-1"]))
+  })
+
+  it("ignores sockets with no participantId (not yet joined)", async () => {
+    vi.mocked(getIo).mockReturnValue(
+      fakeIo([{ data: {} }, { data: { participantId: "participant-1" } }]) as never,
+    )
+
+    const connected = await getConnectedParticipantIds("room-1")
+    expect(connected).toEqual(new Set(["participant-1"]))
+  })
+
+  it("returns an empty set when nobody's connected", async () => {
+    vi.mocked(getIo).mockReturnValue(fakeIo([]) as never)
+    const connected = await getConnectedParticipantIds("room-1")
+    expect(connected).toEqual(new Set())
   })
 })

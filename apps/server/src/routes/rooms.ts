@@ -8,11 +8,18 @@ import {
   type RoomPreview,
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
-import { optionalAuth } from "../middleware/auth.js"
+import { optionalAuth, requireAuth } from "../middleware/auth.js"
 import { userHasBetaFeaturesEnabled } from "../services/authService.js"
-import { createRoomWithHost, getRoomByCode } from "../services/roomService.js"
+import {
+  commitRoomDeletion,
+  createRoomWithHost,
+  findDeletableRoom,
+  getRoomByCode,
+} from "../services/roomService.js"
 import { serializeParticipant, serializeRoom } from "../services/serializers.js"
 import { signParticipantToken } from "../services/tokens.js"
+import { revokeYoutubeAccessForRoom } from "../services/youtubeAuth.js"
+import { deletePlaylistForRoom } from "../services/youtubePlaylist.js"
 
 export const roomsRouter = Router()
 
@@ -86,5 +93,57 @@ roomsRouter.get(
       createdAt: room.createdAt.toISOString(),
     }
     res.json(preview)
+  }),
+)
+
+roomsRouter.delete(
+  "/:code",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const code = req.params.code
+    if (!code) {
+      res.status(400).json({ error: "code is required" })
+      return
+    }
+
+    const found = await findDeletableRoom({
+      roomCode: code.toUpperCase(),
+      userId: req.userId as string,
+    })
+    if ("error" in found) {
+      res.status(found.status).json({ error: found.error })
+      return
+    }
+
+    if (found.room.youtubePlaylistId) {
+      try {
+        await deletePlaylistForRoom(found.room)
+      } catch (err) {
+        // Best-effort: the room (and all its app-side state) is gone
+        // either way, so a stale/revoked YouTube token shouldn't block
+        // deletion — just leave the orphaned playlist in their account.
+        console.error(
+          `Failed to delete YouTube playlist for room ${found.room.id}`,
+          err,
+        )
+      }
+    }
+
+    if (found.room.youtubeRefreshToken || found.room.youtubeAccessToken) {
+      try {
+        await revokeYoutubeAccessForRoom(found.room)
+      } catch (err) {
+        // Best-effort, same reasoning as the playlist deletion above: an
+        // already-expired/invalid token shouldn't block deletion, and our
+        // own copy of it is gone regardless once the room row is deleted.
+        console.error(
+          `Failed to revoke YouTube access for room ${found.room.id}`,
+          err,
+        )
+      }
+    }
+
+    await commitRoomDeletion(found.room.id)
+    res.status(204).end()
   }),
 )

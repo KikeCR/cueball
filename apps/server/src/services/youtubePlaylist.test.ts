@@ -12,6 +12,11 @@ describe("describeYoutubePlaylistError", () => {
     expect(describeYoutubePlaylistError(err)).toMatch(/daily API limit/i)
   })
 
+  it("calls out a busy-service conflict specifically instead of blaming the connection", () => {
+    const err = { errors: [{ reason: "SERVICE_UNAVAILABLE" }] }
+    expect(describeYoutubePlaylistError(err)).toMatch(/temporarily busy/i)
+  })
+
   it("falls back to a connection-check message for other errors", () => {
     const err = { errors: [{ reason: "forbidden" }] }
     expect(describeYoutubePlaylistError(err)).toMatch(/check their YouTube connection/i)

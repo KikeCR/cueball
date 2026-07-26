@@ -48,4 +48,6 @@ export const api = {
       body: body !== undefined ? JSON.stringify(body) : undefined,
       headers: authHeaders(token),
     }),
+  delete: <T>(path: string, token?: string) =>
+    request<T>(path, { method: "DELETE", headers: authHeaders(token) }),
 }

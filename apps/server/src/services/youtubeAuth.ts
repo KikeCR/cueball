@@ -56,6 +56,21 @@ interface RoomYoutubeTokens {
   youtubeTokenExpiresAt: Date | null
 }
 
+/**
+ * Revokes a room's YouTube grant with Google entirely (not just clearing our
+ * copy of the tokens) — passing either token to Google's revoke endpoint
+ * invalidates the whole access+refresh pair, so a room deleted during
+ * testing doesn't leave a lingering authorized-app entry in the host's
+ * Google account. Best-effort: the caller deletes the room regardless.
+ */
+export async function revokeYoutubeAccessForRoom(
+  room: RoomYoutubeTokens,
+): Promise<void> {
+  const token = room.youtubeRefreshToken ?? room.youtubeAccessToken
+  if (!token) return
+  await createOAuthClient().revokeToken(token)
+}
+
 /** Builds a YouTube client for a room's stored tokens; refreshed access tokens are persisted back automatically. */
 export function getAuthorizedYoutubeClient(room: RoomYoutubeTokens) {
   if (!room.youtubeAccessToken || !room.youtubeRefreshToken) {
