@@ -37,6 +37,10 @@ export class CreateRoomFormPageObject {
     await this.user.click(this.castModeButton)
   }
 
+  async selectPlaylistMode() {
+    await this.user.click(this.playlistModeButton)
+  }
+
   async submit() {
     await this.user.click(this.submitButton)
   }
