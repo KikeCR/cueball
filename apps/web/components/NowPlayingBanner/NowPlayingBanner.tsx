@@ -1,11 +1,12 @@
-import { Check, ExternalLink, PlayCircle } from "lucide-react"
+import { useState } from "react"
+import { Check, ExternalLink, Loader2, PlayCircle } from "lucide-react"
 import type { QueueItem } from "@cueball/shared"
 import { Button } from "../ui/button"
 
 interface NowPlayingBannerProps {
   item: QueueItem | null
   canMarkPlayed?: boolean
-  onMarkPlayed?: () => void
+  onMarkPlayed?: () => Promise<void>
 }
 
 // Playlist-sync rooms don't play anything through CueBall itself — everyone
@@ -19,7 +20,19 @@ export function NowPlayingBanner({
   canMarkPlayed = false,
   onMarkPlayed,
 }: NowPlayingBannerProps) {
+  const [marking, setMarking] = useState(false)
+
   if (!item) return null
+
+  const handleMarkPlayed = async () => {
+    if (!onMarkPlayed) return
+    setMarking(true)
+    try {
+      await onMarkPlayed()
+    } finally {
+      setMarking(false)
+    }
+  }
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border bg-surface p-3">
@@ -53,12 +66,19 @@ export function NowPlayingBanner({
       {canMarkPlayed && onMarkPlayed && (
         <Button
           type="button"
+          aria-label="Mark as played"
           variant="ghost"
           size="sm"
-          onClick={onMarkPlayed}
+          onClick={() => void handleMarkPlayed()}
+          disabled={marking}
           className="shrink-0"
         >
-          <Check className="size-3.5" /> Mark as played
+          {marking ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Check className="size-3.5" />
+          )}
+          {marking ? "Marking…" : "Mark as played"}
         </Button>
       )}
     </div>
