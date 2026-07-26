@@ -60,7 +60,7 @@ export function CreateRoomForm() {
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-      {user?.betaFeaturesEnabled && (
+      {user && (
         <div className="flex gap-1 rounded-md bg-surface-hover p-1">
           <button
             type="button"

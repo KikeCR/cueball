@@ -11,7 +11,6 @@ import {
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
 import { optionalAuth, requireAuth } from "../middleware/auth.js"
-import { userHasBetaFeaturesEnabled } from "../services/authService.js"
 import {
   commitRoomDeletion,
   createRoomWithHost,
@@ -50,12 +49,13 @@ roomsRouter.post(
         ? body.mode
         : undefined
 
-    // Cast mode is a beta feature gated per-account — the client hides the
-    // option unless it's enabled, but that's UX only, so re-check here
-    // rather than trust a client-supplied mode.
-    if (mode === CAST_MODE && !(await userHasBetaFeaturesEnabled(req.userId))) {
+    // Cast mode needs an account (so a host can be identified across
+    // reconnects and the room shows up in "Your rooms") — the client hides
+    // the option for guests, but that's UX only, so re-check here rather
+    // than trust a client-supplied mode.
+    if (mode === CAST_MODE && !req.userId) {
       res.status(403).json({
-        error: "Cast mode requires enabling beta features in your account",
+        error: "Sign in to create a Cast-mode room",
       })
       return
     }

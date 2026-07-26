@@ -4,15 +4,13 @@ import userEvent from "@testing-library/user-event"
 import { AuthProvider, useAuth } from "../../context/AuthContext"
 
 function Probe() {
-  const { user, loading, register, login, applyToken, updateSettings, logout } =
-    useAuth()
+  const { user, loading, register, login, applyToken, logout } = useAuth()
   const [applyTokenError, setApplyTokenError] = useState<string | null>(null)
 
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="user">{user ? user.displayName : "none"}</span>
-      <span data-testid="beta">{user ? String(user.betaFeaturesEnabled) : "none"}</span>
       <span data-testid="apply-token-error">{applyTokenError ?? "none"}</span>
       <button onClick={() => login("sam@example.com", "password123")}>
         login
@@ -31,9 +29,6 @@ function Probe() {
         }}
       >
         apply-token
-      </button>
-      <button onClick={() => updateSettings({ betaFeaturesEnabled: true })}>
-        enable-beta
       </button>
       <button onClick={logout}>logout</button>
     </div>
@@ -61,14 +56,6 @@ export class AuthContextPageObject {
 
   get applyTokenErrorText() {
     return screen.getByTestId("apply-token-error").textContent
-  }
-
-  get betaText() {
-    return screen.getByTestId("beta").textContent
-  }
-
-  async enableBeta() {
-    await this.user.click(screen.getByText("enable-beta"))
   }
 
   async login() {

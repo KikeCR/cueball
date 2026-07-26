@@ -34,7 +34,6 @@ export function serializeUser(user: PrismaUser): AuthUser {
     id: user.id,
     email: user.email ?? "",
     displayName: user.displayName,
-    betaFeaturesEnabled: user.betaFeaturesEnabled,
     createdAt: user.createdAt.toISOString(),
   }
 }

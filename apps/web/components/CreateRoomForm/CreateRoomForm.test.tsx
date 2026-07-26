@@ -12,7 +12,7 @@ vi.mock("../../api/client", () => ({
   api: { post: vi.fn() },
 }))
 
-let authUser: { displayName: string; betaFeaturesEnabled: boolean } | null = null
+let authUser: { displayName: string } | null = null
 
 vi.mock("../../context/AuthContext", () => ({
   useAuth: () => ({ token: null, user: authUser }),
@@ -72,13 +72,13 @@ describe("CreateRoomForm", () => {
     expect(pushMock).toHaveBeenCalledWith("/room/ABC123")
   })
 
-  it("hides the Cast option unless the user has beta features enabled", async () => {
+  it("hides the Cast option for guests (not signed in)", async () => {
     const form = new CreateRoomFormPageObject()
     expect(form.queryCastModeButton()).not.toBeInTheDocument()
   })
 
-  it("shows and sends cast mode once selected, for a beta-enabled user", async () => {
-    authUser = { displayName: "Sam", betaFeaturesEnabled: true }
+  it("shows and sends cast mode once selected, for a signed-in user", async () => {
+    authUser = { displayName: "Sam" }
     vi.mocked(api.post).mockResolvedValue({
       room: {
         id: "r1",

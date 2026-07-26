@@ -24,7 +24,6 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   /** Adopts a token issued out-of-band, e.g. redirected back from Google sign-in. */
   applyToken: (token: string) => Promise<void>
-  updateSettings: (settings: { betaFeaturesEnabled: boolean }) => Promise<void>
   logout: () => void
 }
 
@@ -82,18 +81,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(data.user)
   }, [])
 
-  const updateSettings = useCallback(
-    async (settings: { betaFeaturesEnabled: boolean }) => {
-      const data = await api.patch<{ user: AuthUser }>(
-        "/api/auth/me",
-        settings,
-        token ?? undefined,
-      )
-      setUser(data.user)
-    },
-    [token],
-  )
-
   const logout = useCallback(() => {
     clearUserToken()
     setToken(null)
@@ -109,7 +96,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         login,
         applyToken,
-        updateSettings,
         logout,
       }}
     >

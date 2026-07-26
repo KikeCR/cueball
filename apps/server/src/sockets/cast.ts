@@ -1,9 +1,11 @@
 import type { Server } from "socket.io"
 import {
+  DEFAULT_CAST_DEVICE_NAME,
   SocketEvents,
   type ActionError,
   type ActionOk,
   type CastCommandPayload,
+  type CastConnectWithCodePayload,
   type CastSessionStartedPayload,
   type CastSessionState,
 } from "@cueball/shared"
@@ -21,6 +23,8 @@ import { getRoomState } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
 import {
   addVideoToLoungeQueue,
+  bindLoungeSession,
+  pairWithScreenCode,
   seekLoungeTo,
   sendLoungeTransportCommand,
   setLoungePlaylist,
@@ -32,6 +36,61 @@ import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
+
+const LOUNGE_START_FAILURE_MESSAGE =
+  "Connected to the TV, but couldn't start playback on it. Try disconnecting and reconnecting."
+
+/**
+ * Shared by both ways a TV gets connected — the Cast SDK's MDX handshake
+ * (CastSessionStarted, Chromecast-capable browsers only) and manual TV-code
+ * pairing (CastConnectWithCode, any device running the YouTube app). Once
+ * either has a bound Lounge session, everything from here is identical:
+ * load whatever's unplayed into the receiver's own queue and mark the
+ * room's cast state connected.
+ */
+async function bootstrapCastSession(params: {
+  io: Server
+  roomId: string
+  participantId: string
+  deviceName: string
+  lounge: LoungeSessionState | null
+}): Promise<void> {
+  const { io, roomId, participantId, deviceName, lounge } = params
+  let state: CastSessionState = {
+    connected: true,
+    deviceName,
+    casterParticipantId: participantId,
+    isPlaying: false,
+    currentQueueItemId: null,
+  }
+
+  if (lounge) {
+    try {
+      const roomState = await getRoomState(roomId)
+      const unplayed = roomState?.queue.filter((item) => !item.playedAt) ?? []
+
+      let session = lounge
+      const [first, ...rest] = unplayed
+      if (first) {
+        session = await setLoungePlaylist(session, first.youtubeVideoId)
+        for (const item of rest) {
+          session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        }
+        state = { ...state, currentQueueItemId: first.id, isPlaying: true }
+      }
+      await setLoungeSessionState(roomId, session)
+    } catch (err) {
+      console.error(
+        `Failed to start YouTube lounge session for room ${roomId}`,
+        err,
+      )
+      notifyPlaylistSyncFailed(io, roomId, LOUNGE_START_FAILURE_MESSAGE)
+    }
+  }
+
+  await setCastState(roomId, state)
+  await broadcastRoomState(io, roomId)
+}
 
 export function registerCastHandlers(io: Server): void {
   io.on("connection", (socket: RoomSocket) => {
@@ -53,56 +112,93 @@ export function registerCastHandlers(io: Server): void {
             return
           }
 
-          let state: CastSessionState = {
-            connected: true,
-            deviceName: payload.deviceName,
-            casterParticipantId: participantId,
-            isPlaying: false,
-            currentQueueItemId: null,
-          }
-
           // The Cast SDK connection only launches the receiver (which is why
           // the TV opens YouTube on its own) — actually starting playback
           // needs YouTube's separate Lounge API, driven from here using the
           // screenId the browser fetched over the Cast message channel. If
           // that handshake didn't produce a screenId, the TV stays connected
           // but idle rather than failing the whole connection.
+          let lounge: LoungeSessionState | null = null
           if (payload.screenId) {
             try {
-              const roomState = await getRoomState(roomId)
-              const unplayed =
-                roomState?.queue.filter((item) => !item.playedAt) ?? []
-
-              let lounge = await startLoungeSession(payload.screenId)
-              const [first, ...rest] = unplayed
-              if (first) {
-                lounge = await setLoungePlaylist(lounge, first.youtubeVideoId)
-                for (const item of rest) {
-                  lounge = await addVideoToLoungeQueue(lounge, item.youtubeVideoId)
-                }
-                state = {
-                  ...state,
-                  currentQueueItemId: first.id,
-                  isPlaying: true,
-                }
-              }
-              await setLoungeSessionState(roomId, lounge)
+              lounge = await startLoungeSession(payload.screenId)
             } catch (err) {
               console.error(
                 `Failed to start YouTube lounge session for room ${roomId}`,
                 err,
               )
-              notifyPlaylistSyncFailed(
-                io,
-                roomId,
-                "Connected to the TV, but couldn't start playback on it. Try disconnecting and reconnecting.",
-              )
+              notifyPlaylistSyncFailed(io, roomId, LOUNGE_START_FAILURE_MESSAGE)
             }
           }
 
-          await setCastState(roomId, state)
+          await bootstrapCastSession({
+            io,
+            roomId,
+            participantId,
+            deviceName: payload.deviceName,
+            lounge,
+          })
           ack?.({ ok: true })
-          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    // The alternative to the Cast SDK for devices with no Cast support at
+    // all (Roku, most smart TVs, game consoles) — the host reads a pairing
+    // code off the YouTube app's own screen (Settings > "Link with TV
+    // code") and types it in here instead of using a browser's device
+    // picker. No Cast SDK involved on this end at all, so this works from
+    // any browser, including ones useCastSender.ts reports as unsupported.
+    socket.on(
+      SocketEvents.CastConnectWithCode,
+      (payload: CastConnectWithCodePayload, ack?: Ack) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant?.isHost) {
+            ack?.({ error: "Only the host can connect a TV" })
+            return
+          }
+
+          const pairingCode = payload.pairingCode?.trim()
+          if (!pairingCode) {
+            ack?.({ error: "Enter the code shown in the YouTube app" })
+            return
+          }
+
+          let paired
+          try {
+            paired = await pairWithScreenCode(pairingCode)
+          } catch (err) {
+            console.error(
+              `Failed to pair with TV code for room ${roomId}`,
+              err,
+            )
+            ack?.({
+              error: "Couldn't pair with that code. Double-check it and try again.",
+            })
+            return
+          }
+
+          const lounge = await bindLoungeSession(
+            paired.screenId,
+            paired.loungeToken,
+          )
+          await bootstrapCastSession({
+            io,
+            roomId,
+            participantId,
+            deviceName: paired.name ?? DEFAULT_CAST_DEVICE_NAME,
+            lounge,
+          })
+          ack?.({ ok: true })
         })()
       },
     )
@@ -133,7 +229,8 @@ export function registerCastHandlers(io: Server): void {
     // Unlike the old pure-broadcast relay, commands now execute directly
     // against YouTube's Lounge API from here — the server holds the live
     // session, so this works regardless of whether the connecting host's
-    // browser tab is even still open.
+    // browser tab is even still open, and regardless of which connection
+    // method (Cast SDK or TV code) established it.
     socket.on(
       SocketEvents.CastCommand,
       (payload: CastCommandPayload, ack?: Ack) => {
