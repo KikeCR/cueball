@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { screen } from "@testing-library/react"
+import { screen, waitFor } from "@testing-library/react"
 import type { QueueItem } from "@cueball/shared"
 import { NowPlayingBannerPageObject } from "../../test/page-objects/NowPlayingBannerPageObject"
 
@@ -40,14 +40,14 @@ describe("NowPlayingBanner", () => {
     const banner = new NowPlayingBannerPageObject({
       item: makeItem(),
       canMarkPlayed: false,
-      onMarkPlayed: () => {},
+      onMarkPlayed: async () => {},
     })
 
     expect(banner.markPlayedButton).not.toBeInTheDocument()
   })
 
   it("lets an authorized viewer mark the current item played", async () => {
-    const onMarkPlayed = vi.fn()
+    const onMarkPlayed = vi.fn().mockResolvedValue(undefined)
     const banner = new NowPlayingBannerPageObject({
       item: makeItem(),
       canMarkPlayed: true,
@@ -56,5 +56,28 @@ describe("NowPlayingBanner", () => {
 
     await banner.clickMarkPlayed()
     expect(onMarkPlayed).toHaveBeenCalled()
+  })
+
+  it("shows a loading state on the mark-as-played button while it's in flight", async () => {
+    let resolveMarkPlayed: () => void = () => {}
+    const onMarkPlayed = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMarkPlayed = resolve
+        }),
+    )
+    const banner = new NowPlayingBannerPageObject({
+      item: makeItem(),
+      canMarkPlayed: true,
+      onMarkPlayed,
+    })
+
+    const clickPromise = banner.clickMarkPlayed()
+    await waitFor(() => expect(banner.markPlayedButton).toBeDisabled())
+    expect(screen.getByText(/marking/i)).toBeInTheDocument()
+
+    resolveMarkPlayed()
+    await clickPromise
+    await waitFor(() => expect(banner.markPlayedButton).not.toBeDisabled())
   })
 })

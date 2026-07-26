@@ -6,7 +6,7 @@ import { NowPlayingBanner } from "../../components/NowPlayingBanner"
 interface NowPlayingBannerProps {
   item: QueueItem | null
   canMarkPlayed?: boolean
-  onMarkPlayed?: () => void
+  onMarkPlayed?: () => Promise<void>
 }
 
 export class NowPlayingBannerPageObject {

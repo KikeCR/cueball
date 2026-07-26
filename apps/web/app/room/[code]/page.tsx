@@ -143,7 +143,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
   }
 
   const handleSetPlayed = (queueItemId: string, played: boolean) => {
-    setQueueItemPlayed(queueItemId, played).catch(
+    return setQueueItemPlayed(queueItemId, played).catch(
       reportActionError("Failed to update played state"),
     )
   }
@@ -221,9 +221,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
           <NowPlayingBanner
             item={nowPlayingItem}
             canMarkPlayed={canMarkNowPlayingPlayed}
-            onMarkPlayed={() =>
-              nowPlayingItem && handleSetPlayed(nowPlayingItem.id, true)
-            }
+            onMarkPlayed={async () => {
+              if (nowPlayingItem) await handleSetPlayed(nowPlayingItem.id, true)
+            }}
           />
         </div>
       )}
