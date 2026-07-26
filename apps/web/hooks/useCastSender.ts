@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { SocketEvents } from "@cueball/shared"
+import { CAST_MODE, SocketEvents } from "@cueball/shared"
 import { useRoom } from "../context/RoomContext"
 import { useToast } from "../context/ToastContext"
 
@@ -106,7 +106,7 @@ export function useCastSender(): UseCastSenderResult {
   const [status, setStatus] = useState<CastConnectionStatus>("disconnected")
   const [deviceName, setDeviceName] = useState<string | null>(null)
 
-  const isHostCasting = room?.mode === "cast" && Boolean(self?.isHost)
+  const isHostCasting = room?.mode === CAST_MODE && Boolean(self?.isHost)
 
   // Shared by a fresh connect() and by auto-resuming a session that
   // survived a page refresh (see resumeSavedSession below) — both land in

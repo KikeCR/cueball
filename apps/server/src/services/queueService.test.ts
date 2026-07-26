@@ -213,6 +213,28 @@ describe("prepareQueueReorder", () => {
     expect("items" in result).toBe(true)
   })
 
+  it("excludes a Cast-mode room's currently-playing item from the comparison set", async () => {
+    // "b" is currently playing on the TV — it's unplayed in the DB (hasn't
+    // finished yet) but shouldn't count as reorderable "queue" content.
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
+      { id: "a" },
+      { id: "b" },
+      { id: "c" },
+    ] as never)
+
+    const result = await prepareQueueReorder({
+      roomId: "room-1",
+      isHost: true,
+      orderedQueueItemIds: ["c", "a"],
+      excludeQueueItemId: "b",
+    })
+
+    expect("items" in result && result.items.map((i) => i.id)).toEqual([
+      "c",
+      "a",
+    ])
+  })
+
   it("returns the full item rows in the requested order, without writing anything", async () => {
     vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
       { id: "a", title: "A" },
@@ -708,6 +730,23 @@ describe("findClearableQueueItems", () => {
       include: { votes: true },
     })
     expect("items" in result && result.items).toHaveLength(2)
+  })
+
+  it("excludes a Cast-mode room's currently-playing item, so clearing never deletes it", async () => {
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
+      { id: "item-1", votes: [] },
+      { id: "item-2", votes: [] },
+    ] as never)
+
+    const result = await findClearableQueueItems({
+      roomId: "room-1",
+      isHost: true,
+      excludeQueueItemId: "item-1",
+    })
+
+    expect(
+      "items" in result && result.items.map((i) => i.id),
+    ).toEqual(["item-2"])
   })
 })
 

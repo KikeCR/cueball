@@ -4,8 +4,10 @@ import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Cast, Loader2, Youtube } from "lucide-react"
 import {
+  CAST_MODE,
   MAX_NAME_LENGTH,
   MAX_ROOM_NAME_LENGTH,
+  PLAYLIST_MODE,
   type CreateRoomRequest,
   type CreateRoomResponse,
   type RoomMode,
@@ -24,7 +26,7 @@ export function CreateRoomForm() {
   const toast = useToast()
   const [hostName, setHostName] = useState("")
   const [roomName, setRoomName] = useState("")
-  const [mode, setMode] = useState<RoomMode>("playlist")
+  const [mode, setMode] = useState<RoomMode>(PLAYLIST_MODE)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -62,18 +64,18 @@ export function CreateRoomForm() {
         <div className="flex gap-1 rounded-md bg-surface-hover p-1">
           <button
             type="button"
-            onClick={() => setMode("playlist")}
+            onClick={() => setMode(PLAYLIST_MODE)}
             className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-              mode === "playlist" ? "bg-surface text-text" : "text-muted"
+              mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
             }`}
           >
             <Youtube className="size-3.5" /> Playlist
           </button>
           <button
             type="button"
-            onClick={() => setMode("cast")}
+            onClick={() => setMode(CAST_MODE)}
             className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-              mode === "cast" ? "bg-surface text-text" : "text-muted"
+              mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
             }`}
           >
             <Cast className="size-3.5" /> Cast

@@ -1,6 +1,11 @@
 import { randomInt } from "node:crypto"
-import { Prisma, type Participant, type Room } from "@prisma/client"
-import { ROOM_CODE_LENGTH, type RoomMode } from "@cueball/shared"
+import {
+  Prisma,
+  RoomMode as PrismaRoomMode,
+  type Participant,
+  type Room,
+} from "@prisma/client"
+import { CAST_MODE, ROOM_CODE_LENGTH, type RoomMode } from "@cueball/shared"
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import { getCastState } from "../redis/castSession.js"
 import {
@@ -34,7 +39,8 @@ export async function createRoomWithHost(params: {
   userId?: string
   mode?: RoomMode
 }): Promise<{ room: Room; participant: Participant }> {
-  const mode = params.mode === "cast" ? "CAST" : "PLAYLIST"
+  const mode =
+    params.mode === CAST_MODE ? PrismaRoomMode.CAST : PrismaRoomMode.PLAYLIST
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
     const code = generateRoomCode()
     try {

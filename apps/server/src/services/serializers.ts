@@ -1,13 +1,16 @@
-import type {
-  Participant as PrismaParticipant,
-  Room as PrismaRoom,
-  User as PrismaUser,
+import {
+  RoomMode as PrismaRoomMode,
+  type Participant as PrismaParticipant,
+  type Room as PrismaRoom,
+  type User as PrismaUser,
 } from "@prisma/client"
-import type {
-  AuthUser,
-  ParticipantWithPresence,
-  QueueItem,
-  Room,
+import {
+  CAST_MODE,
+  PLAYLIST_MODE,
+  type AuthUser,
+  type ParticipantWithPresence,
+  type QueueItem,
+  type Room,
 } from "@cueball/shared"
 import type { QueueItemWithVotes } from "./queueService.js"
 
@@ -16,7 +19,7 @@ export function serializeRoom(room: PrismaRoom): Room {
     id: room.id,
     code: room.code,
     name: room.name,
-    mode: room.mode === "CAST" ? "cast" : "playlist",
+    mode: room.mode === PrismaRoomMode.CAST ? CAST_MODE : PLAYLIST_MODE,
     hostUserId: room.hostUserId,
     // Never serialize the access/refresh tokens, only the client-safe playlist id.
     youtubePlaylistId: room.youtubePlaylistId,

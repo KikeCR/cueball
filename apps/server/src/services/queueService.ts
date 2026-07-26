@@ -246,6 +246,13 @@ export type PrepareQueueReorderResult =
  * client (someone added/removed/played a video mid-drag) is rejected rather
  * than silently dropping or duplicating items.
  *
+ * `excludeQueueItemId` (a Cast-mode room's currently-playing item, if any)
+ * is dropped from that comparison set entirely — it's already on the TV,
+ * not something waiting its turn, so it isn't reorderable and shouldn't
+ * count as part of "the queue" for this check. Always null for
+ * playlist-sync rooms, which have no separate "currently playing" concept
+ * distinct from "first unplayed item."
+ *
  * Returns the full item rows in the requested order without writing
  * anything yet, so the caller can confirm the real playlist accepts the new
  * order (via syncPlaylistOrderForItems) before calling commitQueueReorder —
@@ -255,15 +262,18 @@ export async function prepareQueueReorder(params: {
   roomId: string
   isHost: boolean
   orderedQueueItemIds: string[]
+  excludeQueueItemId?: string | null
 }): Promise<PrepareQueueReorderResult> {
   if (!params.isHost) {
     return { error: "Only the host can reorder the queue" }
   }
 
-  const current = await prisma.queueItem.findMany({
-    where: { roomId: params.roomId, playedAt: null },
-    include: { votes: true },
-  })
+  const current = (
+    await prisma.queueItem.findMany({
+      where: { roomId: params.roomId, playedAt: null },
+      include: { votes: true },
+    })
+  ).filter((item) => item.id !== params.excludeQueueItemId)
   const currentIds = new Set(current.map((item) => item.id))
   const givenIds = new Set(params.orderedQueueItemIds)
   const isSameSet =
@@ -303,18 +313,26 @@ export type FindClearableQueueItemsResult =
  * items without deleting anything yet, so the caller can attempt the
  * matching real-playlist removals first (playlist-mode rooms) and only
  * commit deletions for the items that actually succeeded there.
+ *
+ * `excludeQueueItemId` (a Cast-mode room's currently-playing item, if any)
+ * is never included — deleting the row backing what's actively on the TV
+ * would strand the Cast poller (see castLoungePolling.ts), which needs that
+ * row to exist to recognize it later as played.
  */
 export async function findClearableQueueItems(params: {
   roomId: string
   isHost: boolean
+  excludeQueueItemId?: string | null
 }): Promise<FindClearableQueueItemsResult> {
   if (!params.isHost) {
     return { error: "Only the host can clear the queue" }
   }
-  const items = await prisma.queueItem.findMany({
-    where: { roomId: params.roomId, playedAt: null },
-    include: { votes: true },
-  })
+  const items = (
+    await prisma.queueItem.findMany({
+      where: { roomId: params.roomId, playedAt: null },
+      include: { votes: true },
+    })
+  ).filter((item) => item.id !== params.excludeQueueItemId)
   return { items }
 }
 

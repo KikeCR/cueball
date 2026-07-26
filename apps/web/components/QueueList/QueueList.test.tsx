@@ -414,4 +414,33 @@ describe("QueueList", () => {
 
     expect(queueList.repeatToggle).not.toBeInTheDocument()
   })
+
+  it("hides the currently-playing item (excludeQueueItemId) from the upcoming list", () => {
+    const currentlyPlaying = makeItem({ id: "q1", title: "Now on the TV" })
+    const upNext = makeItem({ id: "q2", title: "Up Next" })
+    new QueueListPageObject({
+      queue: [currentlyPlaying, upNext],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      excludeQueueItemId: "q1",
+    })
+
+    expect(screen.queryByText("Now on the TV")).not.toBeInTheDocument()
+    expect(screen.getByText("Up Next")).toBeInTheDocument()
+  })
+
+  it("shows the item normally when excludeQueueItemId is unset (playlist-sync rooms)", () => {
+    const item = makeItem({ id: "q1", title: "Now on the TV" })
+    new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
+
+    expect(screen.getByText("Now on the TV")).toBeInTheDocument()
+  })
 })
