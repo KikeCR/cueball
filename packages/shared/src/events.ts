@@ -129,6 +129,8 @@ export interface PlaylistSyncFailedPayload {
 
 export interface CastSessionStartedPayload {
   deviceName: string
+  /** The paired TV's YouTube "screen id" — obtained via the Cast MDX message channel, needed to drive playback through YouTube's Lounge API. */
+  screenId: string | null
 }
 
 export type CastCommandAction = "play" | "pause" | "skip" | "seek"

@@ -38,6 +38,12 @@ import {
   removeVideoFromPlaylist,
   syncPlaylistOrderForItems,
 } from "../services/youtubePlaylist.js"
+import { addVideoToLoungeQueue, setLoungePlaylist } from "../services/youtubeLounge.js"
+import { getCastState, setCastState } from "../redis/castSession.js"
+import {
+  getLoungeSessionState,
+  setLoungeSessionState,
+} from "../redis/castLoungeSession.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
@@ -130,6 +136,45 @@ export function registerQueueHandlers(io: Server): void {
             roomId,
             `Couldn't add that video to the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
           )
+        }
+
+        // If a TV is already connected for this Cast-mode room, push the
+        // new video into the live session instead of leaving it sitting in
+        // the app queue until someone reconnects — either as the first
+        // thing to play (nothing loaded yet) or appended to the receiver's
+        // own live queue (something already is).
+        if (room.mode === "CAST") {
+          try {
+            const lounge = await getLoungeSessionState(roomId)
+            if (lounge) {
+              const cast = await getCastState(roomId)
+              if (cast?.currentQueueItemId) {
+                const updated = await addVideoToLoungeQueue(lounge, videoId)
+                await setLoungeSessionState(roomId, updated)
+              } else {
+                const updated = await setLoungePlaylist(lounge, videoId)
+                await setLoungeSessionState(roomId, updated)
+                if (cast) {
+                  await setCastState(roomId, {
+                    ...cast,
+                    currentQueueItemId: queueItem.id,
+                    isPlaying: true,
+                  })
+                  await broadcastRoomState(io, roomId)
+                }
+              }
+            }
+          } catch (err) {
+            console.error(
+              `Failed to push new video to the live Cast session for room ${roomId}`,
+              err,
+            )
+            notifyPlaylistSyncFailed(
+              io,
+              roomId,
+              "Couldn't add that video to the TV's live queue.",
+            )
+          }
         }
       })()
     })
