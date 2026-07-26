@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 vi.mock("./prisma.js", () => ({
   prisma: {
     room: {
+      findUnique: vi.fn(),
       findMany: vi.fn(),
       delete: vi.fn(),
       update: vi.fn(),
@@ -26,6 +27,8 @@ import { getConnectedParticipantIds } from "../redis/presence.js"
 import { prisma } from "./prisma.js"
 import {
   addParticipant,
+  commitRoomDeletion,
+  findDeletableRoom,
   getUserRoomHistory,
   orderQueueForRoom,
   removeParticipant,
@@ -415,5 +418,85 @@ describe("removeParticipant", () => {
       where: { id: "target-1" },
     })
     expect(result).toEqual({ removed: target })
+  })
+})
+
+describe("findDeletableRoom", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.room.findUnique).mockReset()
+    vi.mocked(getConnectedParticipantIds).mockReset()
+  })
+
+  it("rejects when the room doesn't exist", async () => {
+    vi.mocked(prisma.room.findUnique).mockResolvedValue(null)
+
+    const result = await findDeletableRoom({
+      roomCode: "MISSING",
+      userId: "user-1",
+    })
+
+    expect(result).toEqual({ error: "Room not found", status: 404 })
+  })
+
+  it("rejects a requester who isn't the original host", async () => {
+    vi.mocked(prisma.room.findUnique).mockResolvedValue({
+      id: "room-1",
+      hostUserId: "user-1",
+    } as never)
+
+    const result = await findDeletableRoom({
+      roomCode: "ABC123",
+      userId: "someone-else",
+    })
+
+    expect(result).toEqual({
+      error: "Only the original host can delete this room",
+      status: 403,
+    })
+    expect(getConnectedParticipantIds).not.toHaveBeenCalled()
+  })
+
+  it("rejects when someone is currently connected", async () => {
+    vi.mocked(prisma.room.findUnique).mockResolvedValue({
+      id: "room-1",
+      hostUserId: "user-1",
+    } as never)
+    vi.mocked(getConnectedParticipantIds).mockResolvedValue(
+      new Set(["participant-1"]),
+    )
+
+    const result = await findDeletableRoom({
+      roomCode: "ABC123",
+      userId: "user-1",
+    })
+
+    expect(result).toEqual({
+      error: "Can't delete a room with people currently in it",
+      status: 409,
+    })
+  })
+
+  it("returns the room when the requester is the host and nobody's connected", async () => {
+    const room = { id: "room-1", hostUserId: "user-1" }
+    vi.mocked(prisma.room.findUnique).mockResolvedValue(room as never)
+    vi.mocked(getConnectedParticipantIds).mockResolvedValue(new Set())
+
+    const result = await findDeletableRoom({
+      roomCode: "ABC123",
+      userId: "user-1",
+    })
+
+    expect(result).toEqual({ room })
+  })
+})
+
+describe("commitRoomDeletion", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.room.delete).mockReset()
+  })
+
+  it("deletes the room by id", async () => {
+    await commitRoomDeletion("room-1")
+    expect(prisma.room.delete).toHaveBeenCalledWith({ where: { id: "room-1" } })
   })
 })
