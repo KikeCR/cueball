@@ -351,6 +351,18 @@ describe("getLoungeNowPlaying", () => {
     expect(result).toEqual({ videoId: "new-video" })
   })
 
+  it("reports videoId null (not the whole result null) when the receiver explicitly signals nothing is playing", async () => {
+    const raw = '[[0,["nowPlaying",{"state":"-1","videoId":""}]]]'
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(raw) }),
+    )
+
+    const result = await getLoungeNowPlaying(sampleSession)
+
+    expect(result).toEqual({ videoId: null })
+  })
+
   it("returns null when there's no nowPlaying event", async () => {
     vi.stubGlobal(
       "fetch",
