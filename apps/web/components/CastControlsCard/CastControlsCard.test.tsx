@@ -5,6 +5,7 @@ import { CastControlsCardPageObject } from "../../test/page-objects/CastControls
 
 const sendCastCommandMock = vi.fn()
 const connectMock = vi.fn()
+const connectWithCodeMock = vi.fn()
 const disconnectMock = vi.fn()
 const toastErrorMock = vi.fn()
 
@@ -37,6 +38,7 @@ vi.mock("../../hooks/useCastSender", () => ({
   useCastSender: () => ({
     ...castSenderState,
     connect: connectMock,
+    connectWithCode: connectWithCodeMock,
     disconnect: disconnectMock,
   }),
 }))
@@ -61,9 +63,11 @@ describe("CastControlsCard", () => {
   beforeEach(() => {
     sendCastCommandMock.mockReset()
     connectMock.mockReset()
+    connectWithCodeMock.mockReset()
     disconnectMock.mockReset()
     toastErrorMock.mockReset()
     sendCastCommandMock.mockResolvedValue(undefined)
+    connectWithCodeMock.mockResolvedValue(undefined)
     castState = null
     queueState = []
     castSenderState = { supported: true, status: "disconnected", deviceName: null }
@@ -82,13 +86,43 @@ describe("CastControlsCard", () => {
     expect(connectMock).toHaveBeenCalled()
   })
 
-  it("disables connecting and explains why when the browser can't cast", async () => {
+  it("hides the Cast button and shows the TV-code form directly when the browser can't cast", async () => {
     castSenderState = { supported: false, status: "disconnected", deviceName: null }
     const card = new CastControlsCardPageObject({ isHost: true })
-    expect(card.connectButton).toBeDisabled()
-    expect(
-      await card.findText("Casting requires Chrome on desktop or Android."),
-    ).toBeInTheDocument()
+    expect(card.queryConnectButton()).not.toBeInTheDocument()
+    expect(card.pairingCodeInput).toBeInTheDocument()
+  })
+
+  it("keeps the TV-code form behind a toggle when Cast is supported", async () => {
+    const card = new CastControlsCardPageObject({ isHost: true })
+    expect(card.connectButton).toBeInTheDocument()
+    expect(card.queryPairingCodeInput()).not.toBeInTheDocument()
+
+    await card.clickToggleCodeEntry()
+    expect(card.pairingCodeInput).toBeInTheDocument()
+  })
+
+  it("lets the host connect with a TV code", async () => {
+    const card = new CastControlsCardPageObject({ isHost: true })
+    await card.clickToggleCodeEntry()
+
+    await card.fillPairingCode("abcd1234")
+    await card.submitPairingCode()
+
+    expect(connectWithCodeMock).toHaveBeenCalledWith("abcd1234")
+    await waitFor(() => expect(card.pairingCodeInput).toHaveValue(""))
+  })
+
+  it("keeps the typed code when pairing fails, so the host can fix a typo", async () => {
+    connectWithCodeMock.mockRejectedValue(new Error("Couldn't pair with that code"))
+    const card = new CastControlsCardPageObject({ isHost: true })
+    await card.clickToggleCodeEntry()
+
+    await card.fillPairingCode("wrong-code")
+    await card.submitPairingCode()
+
+    await waitFor(() => expect(connectWithCodeMock).toHaveBeenCalled())
+    expect(card.pairingCodeInput).toHaveValue("wrong-code")
   })
 
   it("shows transport controls and the device name once connected", async () => {

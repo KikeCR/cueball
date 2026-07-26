@@ -1,7 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { CAST_MODE, SocketEvents } from "@cueball/shared"
+import {
+  CAST_MODE,
+  DEFAULT_CAST_DEVICE_NAME,
+  SocketEvents,
+  type ActionError,
+  type ActionOk,
+} from "@cueball/shared"
 import { useRoom } from "../context/RoomContext"
 import { useToast } from "../context/ToastContext"
 
@@ -65,6 +71,8 @@ interface UseCastSenderResult {
   status: CastConnectionStatus
   deviceName: string | null
   connect: () => Promise<void>
+  /** Pairs with any device running the YouTube app (Roku, most smart TVs, game consoles, and — unlike `connect` — any browser, including iOS) via a manual on-screen code. */
+  connectWithCode: (pairingCode: string) => Promise<void>
   disconnect: () => void
 }
 
@@ -223,7 +231,7 @@ export function useCastSender(): UseCastSenderResult {
         return
       }
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession()
-      const name = session?.getCastDevice().friendlyName ?? "TV"
+      const name = session?.getCastDevice().friendlyName ?? DEFAULT_CAST_DEVICE_NAME
       const screenId = session ? await fetchScreenId(session) : null
       announceSessionStarted(name, screenId)
     } catch (err) {
@@ -236,6 +244,38 @@ export function useCastSender(): UseCastSenderResult {
     }
   }, [supported, socket, announceSessionStarted, toastError])
 
+  // No Cast SDK involved at all — this works from any browser (including
+  // iOS, where connect() above can never work) by exchanging a code the
+  // YouTube app shows on its own screen for a Lounge session, entirely
+  // server-side (see sockets/cast.ts's CastConnectWithCode handler).
+  const connectWithCode = useCallback(
+    async (pairingCode: string) => {
+      if (!socket) return
+      setStatus("connecting")
+      try {
+        await new Promise<void>((resolve, reject) => {
+          socket.emit(
+            SocketEvents.CastConnectWithCode,
+            { pairingCode },
+            (result: ActionOk | ActionError) => {
+              if ("error" in result) reject(new Error(result.error))
+              else resolve()
+            },
+          )
+        })
+        setStatus("connected")
+        toastSuccess("Connected to TV")
+      } catch (err) {
+        setStatus("disconnected")
+        toastError(
+          err instanceof Error ? err.message : "Couldn't connect with that code",
+        )
+        throw err
+      }
+    },
+    [socket, toastSuccess, toastError],
+  )
+
   const disconnect = useCallback(() => {
     window.cast?.framework.CastContext.getInstance().endCurrentSession(true)
     setStatus("disconnected")
@@ -244,5 +284,5 @@ export function useCastSender(): UseCastSenderResult {
     socket?.emit(SocketEvents.CastSessionEnded, () => {})
   }, [socket, toastSuccess])
 
-  return { supported, status, deviceName, connect, disconnect }
+  return { supported, status, deviceName, connect, connectWithCode, disconnect }
 }

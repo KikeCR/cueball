@@ -17,6 +17,7 @@
 
 const YOUTUBE_BASE_URL = "https://www.youtube.com/"
 const LOUNGE_TOKEN_URL = `${YOUTUBE_BASE_URL}api/lounge/pairing/get_lounge_token_batch`
+const SCREEN_PAIRING_URL = `${YOUTUBE_BASE_URL}api/lounge/pairing/get_screen`
 const BIND_URL = `${YOUTUBE_BASE_URL}api/lounge/bc/bind`
 const LOUNGE_ID_HEADER = "X-YouTube-LoungeId-Token"
 
@@ -77,6 +78,45 @@ export async function getLoungeToken(screenId: string): Promise<string> {
     throw new Error("YouTube didn't return a lounge token for this screen")
   }
   return loungeToken
+}
+
+export interface PairedScreen {
+  screenId: string
+  loungeToken: string
+  name: string | null
+}
+
+/**
+ * The alternative to the Cast MDX handshake (see useCastSender.ts) for
+ * devices with no Cast support at all — Roku, most smart TVs, game
+ * consoles. Any screen showing the YouTube app can display a manual
+ * pairing code (Settings > "Link with TV code"); exchanging it here
+ * returns the same screenId/loungeToken pair the Cast flow gets by other
+ * means. Everything downstream (bind, setPlaylist, addVideo, transport
+ * commands, status polling) is identical regardless of which method
+ * produced them — the Lounge API doesn't know or care how the sender found
+ * the screen.
+ */
+export async function pairWithScreenCode(
+  pairingCode: string,
+): Promise<PairedScreen> {
+  const res = await fetch(SCREEN_PAIRING_URL, {
+    method: "POST",
+    headers: BASE_HEADERS,
+    body: encodeForm({ pairing_code: pairingCode }),
+  })
+  if (!res.ok) {
+    throw new Error(`Failed to pair with that code (status ${res.status})`)
+  }
+  const body = (await res.json()) as {
+    screen?: { screenId?: string; loungeToken?: string; name?: string }
+  }
+  const screenId = body.screen?.screenId
+  const loungeToken = body.screen?.loungeToken
+  if (!screenId || !loungeToken) {
+    throw new Error("That code doesn't seem to be valid")
+  }
+  return { screenId, loungeToken, name: body.screen?.name ?? null }
 }
 
 const SID_PATTERN = /"c","(.*?)","/

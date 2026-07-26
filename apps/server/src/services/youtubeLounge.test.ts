@@ -5,6 +5,7 @@ import {
   clearLoungePlaylist,
   getLoungeNowPlaying,
   getLoungeToken,
+  pairWithScreenCode,
   rebindLoungeSession,
   removeVideoFromLoungeQueue,
   seekLoungeTo,
@@ -66,6 +67,72 @@ describe("getLoungeToken", () => {
     )
     await expect(getLoungeToken("screen-1")).rejects.toThrow(
       "didn't return a lounge token",
+    )
+  })
+})
+
+describe("pairWithScreenCode", () => {
+  it("posts the pairing code and returns the paired screen", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          screen: {
+            screenId: "screen-1",
+            loungeToken: "lounge-token",
+            name: "Living Room Roku",
+          },
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await pairWithScreenCode("abcd1234")
+
+    expect(result).toEqual({
+      screenId: "screen-1",
+      loungeToken: "lounge-token",
+      name: "Living Room Roku",
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.youtube.com/api/lounge/pairing/get_screen",
+      expect.objectContaining({
+        method: "POST",
+        body: "pairing_code=abcd1234",
+      }),
+    )
+  })
+
+  it("defaults name to null when the device didn't report one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            screen: { screenId: "screen-1", loungeToken: "lounge-token" },
+          }),
+      }),
+    )
+
+    const result = await pairWithScreenCode("abcd1234")
+
+    expect(result.name).toBeNull()
+  })
+
+  it("throws when the request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+    await expect(pairWithScreenCode("bad-code")).rejects.toThrow(
+      "Failed to pair with that code",
+    )
+  })
+
+  it("throws when the response doesn't include a usable screen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }),
+    )
+    await expect(pairWithScreenCode("bad-code")).rejects.toThrow(
+      "doesn't seem to be valid",
     )
   })
 })

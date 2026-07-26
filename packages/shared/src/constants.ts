@@ -8,3 +8,6 @@ export const MIN_PASSWORD_LENGTH = 8
 export const ROOM_CODE_LENGTH = 6
 
 export const MAX_VIDEO_DURATION_SECONDS = 12 * 60
+
+/** Shown in the UI when a connected TV/device didn't report a friendly name of its own. */
+export const DEFAULT_CAST_DEVICE_NAME = "TV"

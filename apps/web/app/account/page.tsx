@@ -13,7 +13,6 @@ import { RoomHistoryList } from "../../components/RoomHistoryList"
 import { Card } from "../../components/ui/card"
 import { Button } from "../../components/ui/button"
 import { Spinner } from "../../components/ui/spinner"
-import { Switch } from "../../components/ui/switch"
 
 type Tab = "login" | "register"
 
@@ -61,22 +60,10 @@ function GoogleCallbackHandler({
 }
 
 export default function AccountPage() {
-  const { user, loading, logout, updateSettings } = useAuth()
-  const toast = useToast()
+  const { user, loading, logout } = useAuth()
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("login")
   const [exchangingToken, setExchangingToken] = useState(false)
-
-  const handleToggleBeta = async (checked: boolean) => {
-    try {
-      await updateSettings({ betaFeaturesEnabled: checked })
-      toast.success("Settings saved")
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to update settings",
-      )
-    }
-  }
 
   const callbackHandler = (
     <Suspense fallback={null}>
@@ -159,25 +146,6 @@ export default function AccountPage() {
           <Button variant="ghost" onClick={logout} className="mt-2 self-start">
             Sign out
           </Button>
-        </Card>
-
-        <Card className="flex flex-col gap-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-muted">
-            Beta features
-          </h2>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold">Cast to TV (beta)</p>
-              <p className="text-xs text-muted">
-                Adds a Chromecast room mode with shared playback controls.
-              </p>
-            </div>
-            <Switch
-              checked={user.betaFeaturesEnabled}
-              onChange={handleToggleBeta}
-              label="Cast to TV (beta)"
-            />
-          </div>
         </Card>
 
         <Card className="flex flex-col gap-3">

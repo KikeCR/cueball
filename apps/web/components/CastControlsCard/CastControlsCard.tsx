@@ -1,12 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
 import { Cast, Loader2, Pause, Play, SkipForward, X } from "lucide-react"
+import { DEFAULT_CAST_DEVICE_NAME } from "@cueball/shared"
 import { useRoom } from "../../context/RoomContext"
 import { useToast } from "../../context/ToastContext"
 import { useCastSender } from "../../hooks/useCastSender"
 import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
+import { Input } from "../ui/input"
 
 interface CastControlsCardProps {
   isHost: boolean
@@ -14,10 +16,14 @@ interface CastControlsCardProps {
 
 export function CastControlsCard({ isHost }: CastControlsCardProps) {
   const { cast, queue, sendCastCommand } = useRoom()
-  const { supported, status, deviceName, connect, disconnect } = useCastSender()
+  const { supported, status, deviceName, connect, connectWithCode, disconnect } =
+    useCastSender()
   const toast = useToast()
   const [togglePending, setTogglePending] = useState(false)
   const [skipPending, setSkipPending] = useState(false)
+  const [pairingCode, setPairingCode] = useState("")
+  const [showCodeEntry, setShowCodeEntry] = useState(false)
+  const [codeConnectPending, setCodeConnectPending] = useState(false)
   const nowPlaying =
     queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
 
@@ -50,6 +56,22 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
     }
   }
 
+  const handleConnectWithCode = async (event: FormEvent) => {
+    event.preventDefault()
+    const trimmed = pairingCode.trim()
+    if (!trimmed) return
+    setCodeConnectPending(true)
+    try {
+      await connectWithCode(trimmed)
+      setPairingCode("")
+    } catch {
+      // Already toasted inside connectWithCode — keep what they typed so
+      // they can fix a typo instead of starting over.
+    } finally {
+      setCodeConnectPending(false)
+    }
+  }
+
   if (!cast?.connected) {
     if (!isHost) {
       return (
@@ -59,28 +81,67 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
       )
     }
     return (
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted">
-            Connect a Chromecast to play the queue on a TV.
-          </p>
-          <Button
+      <div className="flex flex-col gap-3">
+        {/* The Cast SDK only exists in Chrome desktop/Android — browsers
+            that can't use it (notably iOS) skip straight to the TV-code
+            form below instead of showing a button that could never work. */}
+        {supported && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted">
+              Connect a Chromecast to play the queue on a TV.
+            </p>
+            <Button
+              type="button"
+              onClick={() => void connect()}
+              disabled={status === "connecting"}
+            >
+              {status === "connecting" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Cast className="size-4" />
+              )}
+              {status === "connecting" ? "Connecting…" : "Connect to TV"}
+            </Button>
+          </div>
+        )}
+        {supported && (
+          <button
             type="button"
-            onClick={() => void connect()}
-            disabled={!supported || status === "connecting"}
+            onClick={() => setShowCodeEntry((current) => !current)}
+            className="self-start text-xs text-muted underline-offset-2 hover:underline"
           >
-            {status === "connecting" ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Cast className="size-4" />
-            )}
-            {status === "connecting" ? "Connecting…" : "Connect to TV"}
-          </Button>
-        </div>
-        {!supported && (
-          <p className="text-xs text-muted">
-            Casting requires Chrome on desktop or Android.
-          </p>
+            {showCodeEntry
+              ? "Hide"
+              : "Don't see your TV? Enter its YouTube code instead"}
+          </button>
+        )}
+        {(!supported || showCodeEntry) && (
+          <form
+            onSubmit={(event) => void handleConnectWithCode(event)}
+            className="flex flex-col gap-1.5"
+          >
+            <div className="flex gap-2">
+              <Input
+                value={pairingCode}
+                onChange={(event) => setPairingCode(event.target.value)}
+                placeholder="Code shown in the YouTube app"
+                className="flex-1"
+              />
+              <Button type="submit" disabled={codeConnectPending}>
+                {codeConnectPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Cast className="size-4" />
+                )}
+                Connect
+              </Button>
+            </div>
+            <p className="text-xs text-muted">
+              Works with any TV, Roku, or console running the YouTube app.
+              Open it there, go to Settings → &quot;Link with TV
+              code&quot;, and enter the code shown.
+            </p>
+          </form>
         )}
       </div>
     )
@@ -89,7 +150,9 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Badge variant="primary">{deviceName ?? cast.deviceName ?? "TV"}</Badge>
+        <Badge variant="primary">
+          {deviceName ?? cast.deviceName ?? DEFAULT_CAST_DEVICE_NAME}
+        </Badge>
         <div className="flex items-center gap-1.5">
           <Button
             type="button"

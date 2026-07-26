@@ -32,6 +32,7 @@ export const SocketEvents = {
   CastSessionStarted: "cast:session-started",
   CastSessionEnded: "cast:session-ended",
   CastCommand: "cast:command",
+  CastConnectWithCode: "cast:connect-with-code",
 } as const
 
 export interface RoomJoinPayload {
@@ -131,6 +132,16 @@ export interface CastSessionStartedPayload {
   screenId: string | null
 }
 
+/**
+ * The alternative to CastSessionStarted for devices with no Cast support at
+ * all (Roku, most smart TVs, game consoles) — any screen showing the
+ * YouTube app can display a manual pairing code (Settings > "Link with TV
+ * code") that this exchanges for the same kind of Lounge session, server-side.
+ */
+export interface CastConnectWithCodePayload {
+  pairingCode: string
+}
+
 export type CastCommandAction = "play" | "pause" | "skip" | "seek"
 
 export interface CastCommandPayload {
@@ -147,10 +158,6 @@ export interface RegisterRequest {
 export interface LoginRequest {
   email: string
   password: string
-}
-
-export interface UpdateUserSettingsRequest {
-  betaFeaturesEnabled: boolean
 }
 
 export interface AuthResponse {
