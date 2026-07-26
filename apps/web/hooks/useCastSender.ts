@@ -11,14 +11,7 @@ import { useRoom } from "../context/RoomContext"
 import { useToast } from "../context/ToastContext"
 
 const CAST_SENDER_SCRIPT_SRC =
-  "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js"
-
-// The same Cast receiver app ID youtube.com's own Cast button targets, so
-// the TV gets the real native YouTube experience with no receiver of our
-// own to build or host. This isn't a documented public API — the LOAD
-// payload shape below (customData.videoId) is reverse-engineered convention
-// from community Cast-to-YouTube tools, not a Google contract, and needs
-// verification against a real Chromecast.
+  "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
 const YOUTUBE_RECEIVER_APP_ID = "233637DE"
 
 export type CastConnectionStatus = "disconnected" | "connecting" | "connected"
