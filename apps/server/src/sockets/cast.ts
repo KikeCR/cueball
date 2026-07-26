@@ -3,29 +3,31 @@ import {
   SocketEvents,
   type ActionError,
   type ActionOk,
-  type CastAdvanceResult,
   type CastCommandPayload,
   type CastSessionStartedPayload,
   type CastSessionState,
-  type CastStateReportPayload,
 } from "@cueball/shared"
+import { clearCastState, setCastState } from "../redis/castSession.js"
 import {
-  clearCastState,
-  getCastState,
-  setCastState,
-} from "../redis/castSession.js"
-import {
-  commitQueueItemPlayed,
-  findQueueItemForPlayedToggle,
-} from "../services/queueService.js"
+  clearLoungeSessionState,
+  getLoungeSessionState,
+  setLoungeSessionState,
+} from "../redis/castLoungeSession.js"
 import { getRoomState } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
+import {
+  addVideoToLoungeQueue,
+  seekLoungeTo,
+  sendLoungeTransportCommand,
+  setLoungePlaylist,
+  startLoungeSession,
+  type LoungeSessionState,
+} from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
-import { restartQueueIfRepeating } from "./queueRepeat.js"
+import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
-type AdvanceAck = (result: CastAdvanceResult | ActionError) => void
 
 export function registerCastHandlers(io: Server): void {
   io.on("connection", (socket: RoomSocket) => {
@@ -47,7 +49,7 @@ export function registerCastHandlers(io: Server): void {
             return
           }
 
-          const state: CastSessionState = {
+          let state: CastSessionState = {
             connected: true,
             deviceName: payload.deviceName,
             casterParticipantId: participantId,
@@ -56,6 +58,46 @@ export function registerCastHandlers(io: Server): void {
             currentTimeSeconds: null,
             durationSeconds: null,
           }
+
+          // The Cast SDK connection only launches the receiver (which is why
+          // the TV opens YouTube on its own) — actually starting playback
+          // needs YouTube's separate Lounge API, driven from here using the
+          // screenId the browser fetched over the Cast message channel. If
+          // that handshake didn't produce a screenId, the TV stays connected
+          // but idle rather than failing the whole connection.
+          if (payload.screenId) {
+            try {
+              const roomState = await getRoomState(roomId)
+              const unplayed =
+                roomState?.queue.filter((item) => !item.playedAt) ?? []
+
+              let lounge = await startLoungeSession(payload.screenId)
+              const [first, ...rest] = unplayed
+              if (first) {
+                lounge = await setLoungePlaylist(lounge, first.youtubeVideoId)
+                for (const item of rest) {
+                  lounge = await addVideoToLoungeQueue(lounge, item.youtubeVideoId)
+                }
+                state = {
+                  ...state,
+                  currentQueueItemId: first.id,
+                  isPlaying: true,
+                }
+              }
+              await setLoungeSessionState(roomId, lounge)
+            } catch (err) {
+              console.error(
+                `Failed to start YouTube lounge session for room ${roomId}`,
+                err,
+              )
+              notifyPlaylistSyncFailed(
+                io,
+                roomId,
+                "Connected to the TV, but couldn't start playback on it. Try disconnecting and reconnecting.",
+              )
+            }
+          }
+
           await setCastState(roomId, state)
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
@@ -80,32 +122,19 @@ export function registerCastHandlers(io: Server): void {
         }
 
         await clearCastState(roomId)
+        await clearLoungeSessionState(roomId)
         ack?.({ ok: true })
         await broadcastRoomState(io, roomId)
       })()
     })
 
-    // A pure relay: no DB write, no permission beyond room membership. Every
-    // client in the room receives the re-broadcast; only the one holding the
-    // live Cast session (the caster) actually acts on it against the Cast
-    // SDK, so any participant can drive playback without the server needing
-    // to know which browser owns the session.
+    // Unlike the old pure-broadcast relay, commands now execute directly
+    // against YouTube's Lounge API from here — the server holds the live
+    // session, so this works regardless of whether the connecting host's
+    // browser tab is even still open.
     socket.on(
       SocketEvents.CastCommand,
       (payload: CastCommandPayload, ack?: Ack) => {
-        const { participantId, roomId } = socket.data
-        if (!participantId || !roomId) {
-          ack?.({ error: "Join a room first" })
-          return
-        }
-        ack?.({ ok: true })
-        io.to(roomId).emit(SocketEvents.CastCommand, payload)
-      },
-    )
-
-    socket.on(
-      SocketEvents.CastStateReport,
-      (payload: CastStateReportPayload, ack?: Ack) => {
         void (async () => {
           const { participantId, roomId } = socket.data
           if (!participantId || !roomId) {
@@ -113,93 +142,35 @@ export function registerCastHandlers(io: Server): void {
             return
           }
 
-          const participant = await prisma.participant.findUnique({
-            where: { id: participantId },
-          })
-          if (!participant?.isHost) {
-            ack?.({ error: "Only the host can report cast state" })
-            return
-          }
-
-          const current = await getCastState(roomId)
-          if (!current) {
+          const lounge = await getLoungeSessionState(roomId)
+          if (!lounge) {
             ack?.({ error: "No active cast session" })
             return
           }
 
-          await setCastState(roomId, {
-            ...current,
-            isPlaying: payload.isPlaying,
-            currentQueueItemId: payload.currentQueueItemId,
-            currentTimeSeconds: payload.currentTimeSeconds,
-            durationSeconds: payload.durationSeconds,
-          })
-          ack?.({ ok: true })
-          await broadcastRoomState(io, roomId)
+          try {
+            let updated: LoungeSessionState | null = null
+            if (payload.action === "play") {
+              updated = await sendLoungeTransportCommand(lounge, "play")
+            } else if (payload.action === "pause") {
+              updated = await sendLoungeTransportCommand(lounge, "pause")
+            } else if (payload.action === "skip") {
+              updated = await sendLoungeTransportCommand(lounge, "next")
+            } else if (payload.action === "seek") {
+              if (typeof payload.seekSeconds !== "number") {
+                ack?.({ error: "Missing seek time" })
+                return
+              }
+              updated = await seekLoungeTo(lounge, payload.seekSeconds)
+            }
+            if (updated) await setLoungeSessionState(roomId, updated)
+            ack?.({ ok: true })
+          } catch (err) {
+            console.error(`Failed to send cast command for room ${roomId}`, err)
+            ack?.({ error: "Couldn't send that command to the TV" })
+          }
         })()
       },
     )
-
-    // Fired when the host's receiver reports the current video ended: marks
-    // it played (reusing the same queue service the manual "mark played"
-    // flow uses) and hands back the next unplayed item for the host's
-    // browser to load onto the Cast session.
-    socket.on(SocketEvents.CastAdvance, (ack?: AdvanceAck) => {
-      void (async () => {
-        const { participantId, roomId } = socket.data
-        if (!participantId || !roomId) {
-          ack?.({ error: "Join a room first" })
-          return
-        }
-
-        const participant = await prisma.participant.findUnique({
-          where: { id: participantId },
-        })
-        if (!participant?.isHost) {
-          ack?.({ error: "Only the host can advance the cast queue" })
-          return
-        }
-
-        const current = await getCastState(roomId)
-        if (current?.currentQueueItemId) {
-          const found = await findQueueItemForPlayedToggle({
-            queueItemId: current.currentQueueItemId,
-            roomId,
-            participantId,
-            isHost: true,
-            played: true,
-          })
-          if ("item" in found) {
-            await commitQueueItemPlayed({
-              queueItemId: found.item.id,
-              roomId,
-              played: true,
-            })
-
-            const room = await prisma.room.findUnique({ where: { id: roomId } })
-            if (room) await restartQueueIfRepeating(room, roomId)
-          }
-        }
-
-        const state = await getRoomState(roomId)
-        const next = state?.queue.find((item) => !item.playedAt) ?? null
-
-        if (current) {
-          await setCastState(roomId, {
-            ...current,
-            currentQueueItemId: next?.id ?? null,
-            isPlaying: Boolean(next),
-            currentTimeSeconds: null,
-            durationSeconds: null,
-          })
-        }
-
-        ack?.({
-          nextYoutubeVideoId: next?.youtubeVideoId ?? null,
-          nextQueueItemId: next?.id ?? null,
-        })
-        await broadcastRoomState(io, roomId)
-      })()
-    })
   })
 }

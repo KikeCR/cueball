@@ -1,18 +1,61 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import {
-  SocketEvents,
-  type ActionError,
-  type CastAdvanceResult,
-  type CastCommandPayload,
-} from "@cueball/shared"
+import { useCallback, useEffect, useState } from "react"
+import { SocketEvents } from "@cueball/shared"
 import { useRoom } from "../context/RoomContext"
 import { useToast } from "../context/ToastContext"
 
+// The bootstrap script only loads cast_framework.js — which defines
+// window.cast/cast.framework, everything below actually depends on — when
+// its own <script> URL carries this exact query param. Without it, the
+// script silently sets up only the legacy chrome.cast namespace and never
+// fetches the framework layer, leaving window.cast permanently undefined
+// even though __onGCastApiAvailable reports isAvailable=true. Confirmed by
+// reading the shipped source at this URL directly.
 const CAST_SENDER_SCRIPT_SRC =
   "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"
 const YOUTUBE_RECEIVER_APP_ID = "233637DE"
+
+// The custom Cast message channel YouTube's receiver uses to hand back a
+// "screen id" — everything about actually driving playback (see
+// apps/server/src/services/youtubeLounge.ts) happens server-side from that
+// id via YouTube's separate, undocumented Lounge API, not through this Cast
+// session at all. This handshake is the only reason the browser still needs
+// to touch the Cast SDK's media/message plumbing.
+const MDX_NAMESPACE = "urn:x-cast:com.google.youtube.mdx"
+const SCREEN_ID_TIMEOUT_MS = 4000
+
+function fetchScreenId(
+  session: cast.framework.CastSession,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: string | null) => {
+      if (settled) return
+      settled = true
+      session.removeMessageListener(MDX_NAMESPACE, listener)
+      resolve(value)
+    }
+    const listener = (_namespace: string, message: string) => {
+      try {
+        const parsed = JSON.parse(message) as {
+          type?: string
+          data?: { screenId?: string }
+        }
+        if (parsed.type === "mdxSessionStatus" && parsed.data?.screenId) {
+          finish(parsed.data.screenId)
+        }
+      } catch {
+        // Not the message we're waiting for — ignore.
+      }
+    }
+    session.addMessageListener(MDX_NAMESPACE, listener)
+    session
+      .sendMessage(MDX_NAMESPACE, { type: "getMdxSessionStatus" })
+      .catch(() => finish(null))
+    window.setTimeout(() => finish(null), SCREEN_ID_TIMEOUT_MS)
+  })
+}
 
 export type CastConnectionStatus = "disconnected" | "connecting" | "connected"
 
@@ -46,12 +89,14 @@ function describeCastErrorCode(code: string): string {
 
 /**
  * The only module that touches window.cast/chrome.cast. Only does anything
- * for the host of a cast-mode room — everyone else's play/pause/skip taps
- * are just socket emits relayed through the server (see RoomContext's
- * sendCastCommand) to whichever browser this hook is active in.
+ * for the host of a cast-mode room. Playback control (play/pause/skip/seek,
+ * from any participant) and status reporting are both driven server-side
+ * once connected (see sockets/cast.ts and sockets/castLoungePolling.ts) —
+ * this hook's job ends at establishing the Cast session and handing the
+ * server a screenId to take over with.
  */
 export function useCastSender(): UseCastSenderResult {
-  const { socket, room, self, cast, queue } = useRoom()
+  const { socket, room, self } = useRoom()
   // Destructured because useToast()'s returned object is a fresh reference
   // on every toast anywhere in the app (its provider re-renders when the
   // toast list changes) — the individual functions are stable, the wrapper
@@ -60,60 +105,25 @@ export function useCastSender(): UseCastSenderResult {
   const [supported, setSupported] = useState(false)
   const [status, setStatus] = useState<CastConnectionStatus>("disconnected")
   const [deviceName, setDeviceName] = useState<string | null>(null)
-  const playerRef = useRef<cast.framework.RemotePlayer | null>(null)
-  const controllerRef = useRef<cast.framework.RemotePlayerController | null>(
-    null,
-  )
-  const currentQueueItemIdRef = useRef<string | null>(null)
-  currentQueueItemIdRef.current = cast?.currentQueueItemId ?? null
-  const advancingRef = useRef(false)
 
   const isHostCasting = room?.mode === "cast" && Boolean(self?.isHost)
-
-  const loadVideo = useCallback((videoId: string) => {
-    const session = window.cast?.framework.CastContext.getInstance().getCurrentSession()
-    if (!session) return
-    const mediaInfo = new chrome.cast.media.MediaInfo(videoId, "video/mp4")
-    mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED
-    mediaInfo.metadata = new chrome.cast.media.GenericMediaMetadata()
-    const request = new chrome.cast.media.LoadRequest(mediaInfo)
-    request.customData = { videoId }
-    void session.loadMedia(request)
-  }, [])
 
   // Shared by a fresh connect() and by auto-resuming a session that
   // survived a page refresh (see resumeSavedSession below) — both land in
   // the same "tell the server a session is live" place.
   const announceSessionStarted = useCallback(
-    (name: string) => {
+    (name: string, screenId: string | null) => {
       setDeviceName(name)
       setStatus("connected")
       toastSuccess(`Connected to ${name}`)
-      socket?.emit(SocketEvents.CastSessionStarted, { deviceName: name }, () => {})
+      socket?.emit(
+        SocketEvents.CastSessionStarted,
+        { deviceName: name, screenId },
+        () => {},
+      )
     },
     [socket, toastSuccess],
   )
-
-  const advance = useCallback(() => {
-    if (!socket || advancingRef.current) return
-    advancingRef.current = true
-    socket.emit(
-      SocketEvents.CastAdvance,
-      (result: CastAdvanceResult | ActionError) => {
-        advancingRef.current = false
-        if ("error" in result) return
-        if (result.nextYoutubeVideoId) loadVideo(result.nextYoutubeVideoId)
-      },
-    )
-  }, [socket, loadVideo])
-
-  // Nothing plays until something is loaded: kick off the first item as
-  // soon as the session connects, and pick up again if the queue was empty
-  // at connect time and a video gets added while still idle.
-  useEffect(() => {
-    if (!isHostCasting || !cast?.connected || cast.currentQueueItemId) return
-    if (queue.some((item) => !item.playedAt)) advance()
-  }, [isHostCasting, cast?.connected, cast?.currentQueueItemId, queue, advance])
 
   // Load the Cast Sender SDK script, only for the host of a cast-mode room.
   // This SDK does a one-time async handshake with the browser's own Cast
@@ -143,8 +153,9 @@ export function useCastSender(): UseCastSenderResult {
     document.head.appendChild(script)
   }, [isHostCasting])
 
-  // Once the SDK is available, configure the YouTube receiver app and set
-  // up the player/controller this hook drives for the rest of its life.
+  // Once the SDK is available, configure the YouTube receiver app and track
+  // connection status for the rest of this hook's life. Playback itself
+  // isn't driven from here (see the module doc comment above).
   useEffect(() => {
     if (!supported || !isHostCasting) return
     // `supported` can lag a beat behind window.cast actually being fully
@@ -164,115 +175,42 @@ export function useCastSender(): UseCastSenderResult {
     })
 
     const player = new window.cast.framework.RemotePlayer()
-    const controller = new window.cast.framework.RemotePlayerController(
-      player,
-    )
-    playerRef.current = player
-    controllerRef.current = controller
+    const controller = new window.cast.framework.RemotePlayerController(player)
 
     const handleConnectedChanged = () => {
       setStatus(player.isConnected ? "connected" : "disconnected")
       if (!player.isConnected) setDeviceName(null)
     }
 
-    const handlePlayerStateChanged = () => {
-      if (!socket || !player.isConnected) return
-
-      if (player.playerState === chrome.cast.media.PlayerState.IDLE) {
-        const idleReason = context.getCurrentSession()?.getMediaSession()
-          ?.idleReason
-        if (idleReason === chrome.cast.media.IdleReason.FINISHED) {
-          advance()
-          return
-        }
-      }
-
-      socket.emit(SocketEvents.CastStateReport, {
-        isPlaying: player.playerState === chrome.cast.media.PlayerState.PLAYING,
-        currentQueueItemId: currentQueueItemIdRef.current,
-        currentTimeSeconds: player.currentTime,
-        durationSeconds: player.duration,
-      })
-    }
-
     controller.addEventListener(
       window.cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
       handleConnectedChanged,
     )
-    controller.addEventListener(
-      window.cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
-      handlePlayerStateChanged,
-    )
-
-    // Play/pause changes report immediately via the listener above; this
-    // just keeps the scrubber ticking forward in between those events.
-    const progressInterval = window.setInterval(() => {
-      if (!socket || !player.isConnected || !player.isMediaLoaded) return
-      socket.emit(SocketEvents.CastStateReport, {
-        isPlaying: player.playerState === chrome.cast.media.PlayerState.PLAYING,
-        currentQueueItemId: currentQueueItemIdRef.current,
-        currentTimeSeconds: player.currentTime,
-        durationSeconds: player.duration,
-      })
-    }, 1000)
 
     // A page refresh always drops the old socket for real (the server has
     // no way to tell "host reloaded" from "host left"), but the Cast SDK
     // itself may have silently reattached to the still-live session via
-    // resumeSavedSession above — if so, re-announce it so the server's
-    // view of the room catches back up.
+    // resumeSavedSession above — if so, re-announce it (and re-fetch the
+    // screenId) so the server's view of the room catches back up.
     if (player.isConnected) {
-      const name = context.getCurrentSession()?.getCastDevice().friendlyName ?? "TV"
-      announceSessionStarted(name)
-    }
-
-    return () => {
-      window.clearInterval(progressInterval)
-      controller.removeEventListener(
-        window.cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
-        handleConnectedChanged,
-      )
-      controller.removeEventListener(
-        window.cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED,
-        handlePlayerStateChanged,
-      )
-    }
-  }, [supported, isHostCasting, socket, advance, announceSessionStarted])
-
-  // Relayed commands from any participant land here; only the browser
-  // actually holding the live session (this one, once connected) acts.
-  useEffect(() => {
-    if (!socket || !isHostCasting) return
-
-    const handleCommand = (payload: CastCommandPayload) => {
-      const player = playerRef.current
-      const controller = controllerRef.current
-      if (!player?.isConnected || !controller) return
-
-      switch (payload.action) {
-        case "play":
-          if (player.isPaused) controller.playOrPause()
-          break
-        case "pause":
-          if (!player.isPaused) controller.playOrPause()
-          break
-        case "seek":
-          if (typeof payload.seekSeconds === "number") {
-            player.currentTime = payload.seekSeconds
-            controller.seek()
-          }
-          break
-        case "skip":
-          advance()
-          break
+      const session = context.getCurrentSession()
+      const name = session?.getCastDevice().friendlyName ?? "TV"
+      if (session) {
+        void fetchScreenId(session).then((screenId) =>
+          announceSessionStarted(name, screenId),
+        )
+      } else {
+        announceSessionStarted(name, null)
       }
     }
 
-    socket.on(SocketEvents.CastCommand, handleCommand)
     return () => {
-      socket.off(SocketEvents.CastCommand, handleCommand)
+      controller.removeEventListener(
+        window.cast!.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED,
+        handleConnectedChanged,
+      )
     }
-  }, [socket, isHostCasting, advance])
+  }, [supported, isHostCasting, announceSessionStarted])
 
   const connect = useCallback(async () => {
     if (!supported || !socket || !window.cast?.framework) return
@@ -286,7 +224,8 @@ export function useCastSender(): UseCastSenderResult {
       }
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession()
       const name = session?.getCastDevice().friendlyName ?? "TV"
-      announceSessionStarted(name)
+      const screenId = session ? await fetchScreenId(session) : null
+      announceSessionStarted(name, screenId)
     } catch (err) {
       setStatus("disconnected")
       toastError(
