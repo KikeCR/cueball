@@ -247,30 +247,22 @@ export async function seekLoungeTo(
 
 export interface LoungeNowPlaying {
   videoId: string | null
-  currentTimeSeconds: number | null
-}
-
-function parseNumeric(value: unknown): number | null {
-  return typeof value === "string" || typeof value === "number"
-    ? Number(value)
-    : null
 }
 
 /**
- * Best-effort poll of the receiver's current state — the least-verified
+ * Best-effort poll of the receiver's current video — the least-verified
  * part of this integration. The reference implementation only demonstrates
  * extracting a playlist id from this same endpoint; the rest of the
  * `nowPlaying` payload's shape is inferred, not confirmed. Returns null on
  * anything unexpected rather than throwing, since this drives a polling
- * loop that must never take the server down.
+ * loop that must never take the server down. Only the video id is tracked —
+ * play/pause state and playback position aren't surfaced anywhere in the
+ * app, so there's no need to parse the timing-related event data at all.
  *
  * A single poll response can contain a batch of several queued events, not
- * just one — a `nowPlaying` event (carries the video id) and separate
- * `onStateChange` events (carry fresher playback position for whichever
- * video `nowPlaying` last identified) can both show up together. This
- * takes the *last* occurrence of each rather than stopping at the first
- * match, so a stale, already-superseded event earlier in the batch can't
- * override a newer one later in it.
+ * just one — this takes the *last* `nowPlaying` occurrence rather than
+ * stopping at the first match, so a stale, already-superseded event earlier
+ * in the batch can't override a newer one later in it.
  */
 export async function getLoungeNowPlaying(
   session: LoungeSessionState,
@@ -303,20 +295,9 @@ export async function getLoungeNowPlaying(
     let result: LoungeNowPlaying | null = null
     for (const event of events) {
       const [key, value] = event[1] ?? []
-      if (!value || typeof value !== "object") continue
+      if (key !== "nowPlaying" || !value || typeof value !== "object") continue
       const data = value as Record<string, unknown>
-
-      if (key === "nowPlaying") {
-        result = {
-          videoId: typeof data.videoId === "string" ? data.videoId : null,
-          currentTimeSeconds: parseNumeric(data.currentTime),
-        }
-      } else if (key === "onStateChange" && result) {
-        const currentTimeSeconds = parseNumeric(data.currentTime)
-        if (currentTimeSeconds !== null) {
-          result.currentTimeSeconds = currentTimeSeconds
-        }
-      }
+      result = { videoId: typeof data.videoId === "string" ? data.videoId : null }
     }
     return result
   } catch {

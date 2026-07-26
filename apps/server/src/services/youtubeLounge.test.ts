@@ -257,7 +257,7 @@ describe("lounge commands", () => {
 })
 
 describe("getLoungeNowPlaying", () => {
-  it("parses the current video id and time from a nowPlaying event", async () => {
+  it("parses the current video id from a nowPlaying event", async () => {
     const raw =
       '[[0,["nowPlaying",{"videoId":"dQw4w9WgXcQ","currentTime":"12.5"}]]]'
     vi.stubGlobal(
@@ -267,21 +267,7 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ videoId: "dQw4w9WgXcQ", currentTimeSeconds: 12.5 })
-  })
-
-  it("uses a later onStateChange event's time to refresh a nowPlaying event earlier in the same batch", async () => {
-    const raw =
-      '[[0,["nowPlaying",{"videoId":"dQw4w9WgXcQ","currentTime":"12.5"}]],' +
-      '[1,["onStateChange",{"currentTime":"45.2","state":"1"}]]]'
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(raw) }),
-    )
-
-    const result = await getLoungeNowPlaying(sampleSession)
-
-    expect(result).toEqual({ videoId: "dQw4w9WgXcQ", currentTimeSeconds: 45.2 })
+    expect(result).toEqual({ videoId: "dQw4w9WgXcQ" })
   })
 
   it("takes the last nowPlaying event in a batch, not the first", async () => {
@@ -295,7 +281,7 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ videoId: "new-video", currentTimeSeconds: 0 })
+    expect(result).toEqual({ videoId: "new-video" })
   })
 
   it("returns null when there's no nowPlaying event", async () => {

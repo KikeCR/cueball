@@ -32,8 +32,6 @@ export const SocketEvents = {
   CastSessionStarted: "cast:session-started",
   CastSessionEnded: "cast:session-ended",
   CastCommand: "cast:command",
-  CastStateReport: "cast:state-report",
-  CastAdvance: "cast:advance",
 } as const
 
 export interface RoomJoinPayload {
@@ -138,18 +136,6 @@ export type CastCommandAction = "play" | "pause" | "skip" | "seek"
 export interface CastCommandPayload {
   action: CastCommandAction
   seekSeconds?: number
-}
-
-export interface CastStateReportPayload {
-  isPlaying: boolean
-  currentQueueItemId: string | null
-  currentTimeSeconds: number | null
-  durationSeconds: number | null
-}
-
-export interface CastAdvanceResult {
-  nextYoutubeVideoId: string | null
-  nextQueueItemId: string | null
 }
 
 export interface RegisterRequest {

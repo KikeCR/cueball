@@ -1,3 +1,4 @@
+import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { QueueItem } from "@cueball/shared"
 import { CastControlsCardPageObject } from "../../test/page-objects/CastControlsCardPageObject"
@@ -5,14 +6,13 @@ import { CastControlsCardPageObject } from "../../test/page-objects/CastControls
 const sendCastCommandMock = vi.fn()
 const connectMock = vi.fn()
 const disconnectMock = vi.fn()
+const toastErrorMock = vi.fn()
 
 let castState: {
   connected: boolean
   deviceName: string | null
   isPlaying: boolean
   currentQueueItemId: string | null
-  currentTimeSeconds: number | null
-  durationSeconds: number | null
 } | null = null
 let queueState: QueueItem[] = []
 let castSenderState: {
@@ -27,6 +27,10 @@ vi.mock("../../context/RoomContext", () => ({
     queue: queueState,
     sendCastCommand: sendCastCommandMock,
   }),
+}))
+
+vi.mock("../../context/ToastContext", () => ({
+  useToast: () => ({ error: toastErrorMock, success: vi.fn() }),
 }))
 
 vi.mock("../../hooks/useCastSender", () => ({
@@ -58,6 +62,8 @@ describe("CastControlsCard", () => {
     sendCastCommandMock.mockReset()
     connectMock.mockReset()
     disconnectMock.mockReset()
+    toastErrorMock.mockReset()
+    sendCastCommandMock.mockResolvedValue(undefined)
     castState = null
     queueState = []
     castSenderState = { supported: true, status: "disconnected", deviceName: null }
@@ -91,8 +97,6 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: false,
       currentQueueItemId: null,
-      currentTimeSeconds: null,
-      durationSeconds: null,
     }
     const card = new CastControlsCardPageObject({ isHost: false })
 
@@ -111,13 +115,50 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: true,
       currentQueueItemId: null,
-      currentTimeSeconds: null,
-      durationSeconds: null,
     }
     const card = new CastControlsCardPageObject({ isHost: true })
 
     await card.clickPlayPause()
     expect(sendCastCommandMock).toHaveBeenCalledWith("pause")
+  })
+
+  it("shows a pending state on the play/pause button while the command is in flight", async () => {
+    let resolveCommand: () => void = () => {}
+    sendCastCommandMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveCommand = resolve
+      }),
+    )
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+    }
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    const clickPromise = card.clickPlayPause()
+    await waitFor(() => expect(card.playPauseButton).toBeDisabled())
+
+    resolveCommand()
+    await clickPromise
+    await waitFor(() => expect(card.playPauseButton).not.toBeDisabled())
+  })
+
+  it("toasts an error when a command fails", async () => {
+    sendCastCommandMock.mockRejectedValue(new Error("Couldn't reach the TV"))
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+    }
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    await card.clickPlayPause()
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith("Couldn't reach the TV"),
+    )
   })
 
   it("shows the now-playing title and thumbnail for the loaded queue item", async () => {
@@ -126,8 +167,6 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: true,
       currentQueueItemId: "item-1",
-      currentTimeSeconds: null,
-      durationSeconds: null,
     }
     queueState = [makeQueueItem()]
     const card = new CastControlsCardPageObject({ isHost: true })
@@ -137,47 +176,12 @@ describe("CastControlsCard", () => {
     ).toBeInTheDocument()
   })
 
-  it("shows a seek slider once duration is known, and sends seek commands", async () => {
-    castState = {
-      connected: true,
-      deviceName: "Living Room TV",
-      isPlaying: true,
-      currentQueueItemId: null,
-      currentTimeSeconds: 30,
-      durationSeconds: 180,
-    }
-    const card = new CastControlsCardPageObject({ isHost: true })
-
-    const slider = card.seekSlider
-    expect(slider).toHaveAttribute("max", "180")
-    expect(slider).toHaveAttribute("value", "30")
-
-    card.seekTo(90)
-    expect(sendCastCommandMock).toHaveBeenCalledWith("seek", 90)
-  })
-
-  it("hides the seek slider until a duration is available", async () => {
-    castState = {
-      connected: true,
-      deviceName: "Living Room TV",
-      isPlaying: false,
-      currentQueueItemId: null,
-      currentTimeSeconds: null,
-      durationSeconds: null,
-    }
-    const card = new CastControlsCardPageObject({ isHost: true })
-
-    expect(card.querySeekSlider()).not.toBeInTheDocument()
-  })
-
   it("lets the host disconnect, and hides that control from other participants", async () => {
     castState = {
       connected: true,
       deviceName: "Living Room TV",
       isPlaying: false,
       currentQueueItemId: null,
-      currentTimeSeconds: null,
-      durationSeconds: null,
     }
     const hostCard = new CastControlsCardPageObject({ isHost: true })
     await hostCard.clickDisconnect()
@@ -190,8 +194,6 @@ describe("CastControlsCard", () => {
       deviceName: "Living Room TV",
       isPlaying: false,
       currentQueueItemId: null,
-      currentTimeSeconds: null,
-      durationSeconds: null,
     }
     const guestCard = new CastControlsCardPageObject({ isHost: false })
     expect(guestCard.queryDisconnectButton()).not.toBeInTheDocument()

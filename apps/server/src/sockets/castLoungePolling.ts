@@ -8,7 +8,6 @@ import {
 } from "../services/queueService.js"
 import { getRoomState } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
-import { fetchVideoDurationSeconds } from "../services/youtube.js"
 import { getLoungeNowPlaying } from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
@@ -47,15 +46,10 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
     (item) => item.id === cast.currentQueueItemId,
   )
 
-  if (currentItem?.youtubeVideoId === nowPlaying.videoId) {
-    await setCastState(roomId, {
-      ...cast,
-      isPlaying: true,
-      currentTimeSeconds: nowPlaying.currentTimeSeconds,
-    })
-    await broadcastRoomState(io, roomId)
-    return
-  }
+  // Same video still playing — nothing to reconcile. Play/pause state is
+  // owned by the CastCommand handler (the receiver doesn't reliably report
+  // it back), not by this poller.
+  if (currentItem?.youtubeVideoId === nowPlaying.videoId) return
 
   // The video changed — either it finished naturally and the receiver
   // auto-advanced into the next one on its own, or a skip command landed.
@@ -84,16 +78,11 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
   const nextItem = refreshedState?.queue.find(
     (item) => item.youtubeVideoId === nowPlaying.videoId,
   )
-  const durationSeconds = await fetchVideoDurationSeconds(
-    nowPlaying.videoId,
-  ).catch(() => null)
 
   await setCastState(roomId, {
     ...cast,
     currentQueueItemId: nextItem?.id ?? null,
     isPlaying: true,
-    currentTimeSeconds: nowPlaying.currentTimeSeconds,
-    durationSeconds,
   })
   await broadcastRoomState(io, roomId)
 }
