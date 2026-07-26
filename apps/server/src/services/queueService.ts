@@ -330,6 +330,56 @@ export async function commitQueueClear(params: {
   await touchRoomActivity(params.roomId)
 }
 
+export type FindRepeatRestartItemsResult =
+  { items: QueueItemWithVotes[] } | { noop: true }
+
+/**
+ * When repeat is on and marking a video played leaves nothing left to play,
+ * the whole watched history becomes the next lap instead of leaving the room
+ * empty. Returns the played items, oldest-played first (so the repeat lap
+ * replays in the same order they were first watched), without resetting
+ * anything yet — the caller re-adds each to the real playlist first (see
+ * commitQueueRepeatRestart), the same confirm-before-commit shape used
+ * elsewhere in this file.
+ */
+export async function findRepeatRestartItems(params: {
+  roomId: string
+  repeatEnabled: boolean
+}): Promise<FindRepeatRestartItemsResult> {
+  if (!params.repeatEnabled) return { noop: true }
+
+  const remaining = await prisma.queueItem.count({
+    where: { roomId: params.roomId, playedAt: null },
+  })
+  if (remaining > 0) return { noop: true }
+
+  const items = await prisma.queueItem.findMany({
+    where: { roomId: params.roomId, playedAt: { not: null } },
+    include: { votes: true },
+    orderBy: { playedAt: "asc" },
+  })
+  if (items.length === 0) return { noop: true }
+
+  return { items }
+}
+
+/**
+ * Resets the given (already confirmed against the real playlist) items back
+ * to unplayed — a subset of findRepeatRestartItems's result if any failed to
+ * re-add to the real playlist.
+ */
+export async function commitQueueRepeatRestart(params: {
+  roomId: string
+  queueItemIds: string[]
+}): Promise<void> {
+  if (params.queueItemIds.length === 0) return
+  await prisma.queueItem.updateMany({
+    where: { id: { in: params.queueItemIds } },
+    data: { playedAt: null },
+  })
+  await touchRoomActivity(params.roomId)
+}
+
 /**
  * Clears played history. No real-playlist sync needed — a played item's
  * youtubePlaylistItemId is already cleared when it was marked played, so

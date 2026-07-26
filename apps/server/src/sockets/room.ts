@@ -9,6 +9,7 @@ import {
   type ParticipantRenamePayload,
   type RoomJoinPayload,
   type RoomJoinResult,
+  type RoomSetRepeatPayload,
   type RoomStatePayload,
 } from "@cueball/shared"
 import { clearCastState, getCastState } from "../redis/castSession.js"
@@ -17,6 +18,7 @@ import {
   getRoomState,
   removeParticipant,
   renameParticipant,
+  setRoomRepeat,
   touchRoomActivity,
 } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
@@ -198,6 +200,43 @@ export function registerRoomHandlers(io: Server): void {
           }
 
           await renameParticipant({ participantId, roomId, name })
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.RoomSetRepeat,
+      (
+        payload: RoomSetRepeatPayload,
+        ack?: (result: ActionOk | ActionError) => void,
+      ) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const result = await setRoomRepeat({
+            roomId,
+            isHost: participant.isHost,
+            enabled: payload.enabled,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)

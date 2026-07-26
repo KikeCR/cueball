@@ -14,7 +14,9 @@ vi.mock("./prisma.js", () => {
       delete: vi.fn(),
       deleteMany: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       aggregate: vi.fn(),
+      count: vi.fn(),
     },
     room: {
       findUnique: vi.fn(),
@@ -52,10 +54,12 @@ import {
   commitQueueHistoryClear,
   commitQueueItemPlayed,
   commitQueueItemRemoval,
+  commitQueueRepeatRestart,
   commitQueueReorder,
   findClearableQueueItems,
   findQueueItemForPlayedToggle,
   findRemovableQueueItem,
+  findRepeatRestartItems,
   isVideoAlreadyQueued,
   prepareQueueReorder,
 } from "./queueService.js"
@@ -758,6 +762,94 @@ describe("commitQueueHistoryClear", () => {
       where: { roomId: "room-1", playedAt: { not: null } },
     })
     expect(result).toEqual({ clearedCount: 3 })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+  })
+})
+
+describe("findRepeatRestartItems", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.count).mockReset()
+    vi.mocked(prisma.queueItem.findMany).mockReset()
+  })
+
+  it("is a no-op when repeat is disabled", async () => {
+    const result = await findRepeatRestartItems({
+      roomId: "room-1",
+      repeatEnabled: false,
+    })
+
+    expect(result).toEqual({ noop: true })
+    expect(prisma.queueItem.count).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op when unplayed items remain", async () => {
+    vi.mocked(prisma.queueItem.count).mockResolvedValue(2)
+
+    const result = await findRepeatRestartItems({
+      roomId: "room-1",
+      repeatEnabled: true,
+    })
+
+    expect(result).toEqual({ noop: true })
+    expect(prisma.queueItem.findMany).not.toHaveBeenCalled()
+  })
+
+  it("is a no-op when there's no played history to restart", async () => {
+    vi.mocked(prisma.queueItem.count).mockResolvedValue(0)
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([])
+
+    const result = await findRepeatRestartItems({
+      roomId: "room-1",
+      repeatEnabled: true,
+    })
+
+    expect(result).toEqual({ noop: true })
+  })
+
+  it("returns played items oldest-played first when everything's played and repeat is on", async () => {
+    vi.mocked(prisma.queueItem.count).mockResolvedValue(0)
+    vi.mocked(prisma.queueItem.findMany).mockResolvedValue([
+      { id: "item-1", votes: [] },
+      { id: "item-2", votes: [] },
+    ] as never)
+
+    const result = await findRepeatRestartItems({
+      roomId: "room-1",
+      repeatEnabled: true,
+    })
+
+    expect(prisma.queueItem.findMany).toHaveBeenCalledWith({
+      where: { roomId: "room-1", playedAt: { not: null } },
+      include: { votes: true },
+      orderBy: { playedAt: "asc" },
+    })
+    expect("items" in result && result.items).toHaveLength(2)
+  })
+})
+
+describe("commitQueueRepeatRestart", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.queueItem.updateMany).mockReset()
+    vi.mocked(touchRoomActivity).mockReset()
+  })
+
+  it("does nothing for an empty list", async () => {
+    await commitQueueRepeatRestart({ roomId: "room-1", queueItemIds: [] })
+
+    expect(prisma.queueItem.updateMany).not.toHaveBeenCalled()
+    expect(touchRoomActivity).not.toHaveBeenCalled()
+  })
+
+  it("resets the given items back to unplayed", async () => {
+    await commitQueueRepeatRestart({
+      roomId: "room-1",
+      queueItemIds: ["item-1", "item-2"],
+    })
+
+    expect(prisma.queueItem.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["item-1", "item-2"] } },
+      data: { playedAt: null },
+    })
     expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 })

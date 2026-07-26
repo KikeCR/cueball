@@ -78,6 +78,7 @@ interface RoomContextValue {
   setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
   clearQueue: () => Promise<QueueClearResult>
   clearHistory: () => Promise<void>
+  setRepeat: (enabled: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   renameSelf: (name: string) => Promise<void>
   sendCastCommand: (action: CastCommandAction, seekSeconds?: number) => Promise<void>
@@ -281,6 +282,12 @@ export function RoomProvider({
     [],
   )
 
+  const setRepeat = useCallback(
+    (enabled: boolean) =>
+      emitAction(socketRef.current, SocketEvents.RoomSetRepeat, { enabled }),
+    [],
+  )
+
   const removeParticipant = useCallback(
     (participantId: string) =>
       emitAction(socketRef.current, SocketEvents.ParticipantRemove, {
@@ -327,6 +334,7 @@ export function RoomProvider({
         setQueueItemPlayed,
         clearQueue,
         clearHistory,
+        setRepeat,
         removeParticipant,
         renameSelf,
         sendCastCommand,

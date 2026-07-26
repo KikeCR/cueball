@@ -340,4 +340,49 @@ describe("QueueList", () => {
 
     expect(queueList.clearHistoryButton).not.toBeInTheDocument()
   })
+
+  it("lets the host toggle repeat from the played section", async () => {
+    const onSetRepeat = vi.fn()
+    const item = makeItem({ playedAt: new Date().toISOString() })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      repeatEnabled: false,
+      onSetRepeat,
+    })
+
+    expect(queueList.repeatToggle).toHaveAttribute("aria-checked", "false")
+    await queueList.clickRepeatToggle()
+    expect(onSetRepeat).toHaveBeenCalledWith(true)
+  })
+
+  it("hides the repeat toggle from a non-host", () => {
+    const item = makeItem({ playedAt: new Date().toISOString() })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p2",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onSetRepeat: vi.fn(),
+    })
+
+    expect(queueList.repeatToggle).not.toBeInTheDocument()
+  })
+
+  it("hides the repeat toggle when there's no played history", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem()],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onSetRepeat: vi.fn(),
+    })
+
+    expect(queueList.repeatToggle).not.toBeInTheDocument()
+  })
 })

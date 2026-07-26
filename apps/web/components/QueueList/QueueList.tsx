@@ -12,10 +12,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Check, ChevronDown, ChevronUp, GripVertical, Trash2, Undo2, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, GripVertical, Repeat, Trash2, Undo2, X } from "lucide-react"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { cn } from "../../utils/cn"
 import { Button } from "../ui/button"
+import { Switch } from "../ui/switch"
 
 interface QueueListProps {
   queue: QueueItem[]
@@ -28,6 +29,9 @@ interface QueueListProps {
   onClearHistory?: () => void
   /** True once the host has manually reordered the queue. */
   manualOrderActive?: boolean
+  /** When on, finishing the last unplayed video restarts the whole played history as a fresh lap. */
+  repeatEnabled?: boolean
+  onSetRepeat?: (enabled: boolean) => void
 }
 
 export function QueueList({
@@ -40,6 +44,8 @@ export function QueueList({
   onSetPlayed,
   onClearHistory,
   manualOrderActive = false,
+  repeatEnabled = false,
+  onSetRepeat,
 }: QueueListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -208,20 +214,32 @@ export function QueueList({
 
       {played.length > 0 && (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
               Played videos
             </h3>
-            {self?.isHost && onClearHistory && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onClearHistory}
-              >
-                <Trash2 className="size-3.5" /> Clear history
-              </Button>
-            )}
+            <div className="flex items-center gap-3">
+              {self?.isHost && onSetRepeat && (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                  <Repeat className="size-3.5" /> Repeat
+                  <Switch
+                    checked={repeatEnabled}
+                    onChange={onSetRepeat}
+                    label="Repeat the queue once everything's played"
+                  />
+                </div>
+              )}
+              {self?.isHost && onClearHistory && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onClearHistory}
+                >
+                  <Trash2 className="size-3.5" /> Clear history
+                </Button>
+              )}
+            </div>
           </div>
           <ol className="flex flex-col gap-2 opacity-60">
             {played.map((item) => {

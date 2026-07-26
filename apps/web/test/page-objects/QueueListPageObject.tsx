@@ -13,6 +13,8 @@ interface QueueListProps {
   onSetPlayed?: (queueItemId: string, played: boolean) => void
   onClearHistory?: () => void
   manualOrderActive?: boolean
+  repeatEnabled?: boolean
+  onSetRepeat?: (enabled: boolean) => void
 }
 
 export class QueueListPageObject {
@@ -70,6 +72,18 @@ export class QueueListPageObject {
     const button = this.clearHistoryButton
     if (!button) throw new Error("Clear history button is not rendered")
     await this.user.click(button)
+  }
+
+  get repeatToggle() {
+    return screen.queryByRole("switch", {
+      name: /repeat the queue once everything's played/i,
+    })
+  }
+
+  async clickRepeatToggle() {
+    const toggle = this.repeatToggle
+    if (!toggle) throw new Error("Repeat toggle is not rendered")
+    await this.user.click(toggle)
   }
 
   async clickUpvote() {

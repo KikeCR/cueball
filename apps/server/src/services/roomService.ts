@@ -222,6 +222,25 @@ export async function commitRoomDeletion(roomId: string): Promise<void> {
   await prisma.room.delete({ where: { id: roomId } })
 }
 
+export type SetRoomRepeatResult = { room: Room } | { error: string }
+
+/** Only the host may toggle repeat for their room. */
+export async function setRoomRepeat(params: {
+  roomId: string
+  isHost: boolean
+  enabled: boolean
+}): Promise<SetRoomRepeatResult> {
+  if (!params.isHost) {
+    return { error: "Only the host can change repeat" }
+  }
+  const room = await prisma.room.update({
+    where: { id: params.roomId },
+    data: { repeatEnabled: params.enabled },
+  })
+  await touchRoomActivity(params.roomId)
+  return { room }
+}
+
 export async function getUserRoomHistory(userId: string): Promise<
   Array<{
     id: string

@@ -21,6 +21,7 @@ import {
 import { getRoomState } from "../services/roomService.js"
 import { prisma } from "../services/prisma.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { restartQueueIfRepeating } from "./queueRepeat.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
@@ -174,6 +175,9 @@ export function registerCastHandlers(io: Server): void {
               roomId,
               played: true,
             })
+
+            const room = await prisma.room.findUnique({ where: { id: roomId } })
+            if (room) await restartQueueIfRepeating(room, roomId)
           }
         }
 

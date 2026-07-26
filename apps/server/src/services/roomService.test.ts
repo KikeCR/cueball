@@ -33,6 +33,7 @@ import {
   orderQueueForRoom,
   removeParticipant,
   renameParticipant,
+  setRoomRepeat,
   sortQueueItems,
   sweepExpiredRooms,
   touchRoomActivity,
@@ -498,5 +499,39 @@ describe("commitRoomDeletion", () => {
   it("deletes the room by id", async () => {
     await commitRoomDeletion("room-1")
     expect(prisma.room.delete).toHaveBeenCalledWith({ where: { id: "room-1" } })
+  })
+})
+
+describe("setRoomRepeat", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.room.update).mockReset()
+  })
+
+  it("rejects a non-host requester", async () => {
+    const result = await setRoomRepeat({
+      roomId: "room-1",
+      isHost: false,
+      enabled: true,
+    })
+
+    expect(result).toEqual({ error: "Only the host can change repeat" })
+    expect(prisma.room.update).not.toHaveBeenCalled()
+  })
+
+  it("updates repeatEnabled for the host", async () => {
+    const room = { id: "room-1", repeatEnabled: true }
+    vi.mocked(prisma.room.update).mockResolvedValue(room as never)
+
+    const result = await setRoomRepeat({
+      roomId: "room-1",
+      isHost: true,
+      enabled: true,
+    })
+
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "room-1" },
+      data: { repeatEnabled: true },
+    })
+    expect(result).toEqual({ room })
   })
 })

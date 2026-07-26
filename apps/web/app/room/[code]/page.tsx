@@ -36,6 +36,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     setQueueItemPlayed,
     clearQueue,
     clearHistory,
+    setRepeat,
     removeParticipant,
     renameSelf,
   } = useRoom()
@@ -158,6 +159,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
       .catch(reportActionError("Failed to clear played history"))
   }
 
+  const handleSetRepeat = (enabled: boolean) => {
+    setRepeat(enabled)
+      .then(() => toast.success(enabled ? "Repeat enabled" : "Repeat disabled"))
+      .catch(reportActionError("Failed to update repeat"))
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
@@ -268,6 +275,8 @@ function RoomView({ roomCode }: { roomCode: string }) {
             onSetPlayed={handleSetPlayed}
             onClearHistory={() => setClearHistoryDialogOpen(true)}
             manualOrderActive={Boolean(room?.manualQueueOrder)}
+            repeatEnabled={Boolean(room?.repeatEnabled)}
+            onSetRepeat={handleSetRepeat}
           />
         </Card>
       </div>

@@ -52,6 +52,11 @@ model Room {
   // switches it back off, handing ordering back to the votes.
   manualQueueOrder Boolean @default(false)
 
+  // When on, a played queue item that empties the queue (nothing left
+  // unplayed) triggers restarting the whole history as a fresh lap instead
+  // of leaving the room with nothing to play.
+  repeatEnabled Boolean @default(false)
+
   participants Participant[] @relation("RoomParticipants")
   queueItems   QueueItem[]   @relation("RoomQueueItems")
 

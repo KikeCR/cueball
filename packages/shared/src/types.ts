@@ -9,6 +9,8 @@ export interface Room {
   youtubePlaylistId: string | null
   /** True once the host has manually reordered the queue; a host vote hands ordering back to votes. */
   manualQueueOrder: boolean
+  /** When on, finishing the last unplayed video restarts the whole played history as a fresh lap. */
+  repeatEnabled: boolean
   createdAt: string
 }
 

@@ -41,6 +41,7 @@ import {
 import { broadcastRoomState } from "./broadcast.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
+import { restartQueueIfRepeating } from "./queueRepeat.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
@@ -359,6 +360,11 @@ export function registerQueueHandlers(io: Server): void {
             roomId,
             played: payload.played,
           })
+
+          if (payload.played && room) {
+            await restartQueueIfRepeating(room, roomId)
+          }
+
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
         })()

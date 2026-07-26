@@ -24,6 +24,7 @@ export const SocketEvents = {
   QueueSetPlayed: "queue:set-played",
   QueueClear: "queue:clear",
   QueueClearHistory: "queue:clear-history",
+  RoomSetRepeat: "room:set-repeat",
 
   PlaylistSyncFailed: "playlist:sync-failed",
 
@@ -115,6 +116,10 @@ export interface QueueSetPlayedPayload {
 export interface QueueClearResult {
   clearedCount: number
   totalCount: number
+}
+
+export interface RoomSetRepeatPayload {
+  enabled: boolean
 }
 
 export interface PlaylistSyncFailedPayload {
