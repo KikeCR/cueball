@@ -26,7 +26,7 @@ export function CreateRoomForm() {
   const toast = useToast()
   const [hostName, setHostName] = useState("")
   const [roomName, setRoomName] = useState("")
-  const [mode, setMode] = useState<RoomMode>(PLAYLIST_MODE)
+  const [mode, setMode] = useState<RoomMode>(CAST_MODE)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -60,28 +60,26 @@ export function CreateRoomForm() {
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-      {user && (
-        <div className="flex gap-1 rounded-md bg-surface-hover p-1">
-          <button
-            type="button"
-            onClick={() => setMode(PLAYLIST_MODE)}
-            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-              mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
-            }`}
-          >
-            <Youtube className="size-3.5" /> Playlist
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode(CAST_MODE)}
-            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
-              mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
-            }`}
-          >
-            <Cast className="size-3.5" /> Cast
-          </button>
-        </div>
-      )}
+      <div className="flex gap-1 rounded-md bg-surface-hover p-1">
+        <button
+          type="button"
+          onClick={() => setMode(CAST_MODE)}
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+            mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
+          }`}
+        >
+          <Cast className="size-3.5" /> Cast
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode(PLAYLIST_MODE)}
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+            mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
+          }`}
+        >
+          <Youtube className="size-3.5" /> Playlist
+        </button>
+      </div>
       <Label>
         Your name
         <Input
