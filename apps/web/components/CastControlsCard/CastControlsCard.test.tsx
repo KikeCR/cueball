@@ -14,6 +14,7 @@ let castState: {
   deviceName: string | null
   isPlaying: boolean
   currentQueueItemId: string | null
+  restarting?: boolean
 } | null = null
 let queueState: QueueItem[] = []
 let castSenderState: {
@@ -218,6 +219,35 @@ describe("CastControlsCard", () => {
     expect(
       await card.findText("Never Gonna Give You Up"),
     ).toBeInTheDocument()
+  })
+
+  it("shows a starting indicator instead of the now-playing item while restarting", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: "item-1",
+      restarting: true,
+    }
+    queueState = [makeQueueItem()]
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    expect(
+      await card.findText('Starting "Never Gonna Give You Up"…'),
+    ).toBeInTheDocument()
+  })
+
+  it("falls back to a generic restarting message when there's no item to name yet", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: false,
+      currentQueueItemId: null,
+      restarting: true,
+    }
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    expect(await card.findText("Restarting the queue…")).toBeInTheDocument()
   })
 
   it("lets the host disconnect, and hides that control from other participants", async () => {
