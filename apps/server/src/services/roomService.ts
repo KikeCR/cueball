@@ -249,6 +249,25 @@ export async function setRoomRepeat(params: {
   return { room }
 }
 
+export type SetRoomNameResult = { room: Room } | { error: string }
+
+/** Only the host may rename their room; a blank name clears it back to the room code as the display fallback. */
+export async function setRoomName(params: {
+  roomId: string
+  isHost: boolean
+  name: string | null
+}): Promise<SetRoomNameResult> {
+  if (!params.isHost) {
+    return { error: "Only the host can rename the room" }
+  }
+  const room = await prisma.room.update({
+    where: { id: params.roomId },
+    data: { name: params.name },
+  })
+  await touchRoomActivity(params.roomId)
+  return { room }
+}
+
 export async function getUserRoomHistory(userId: string): Promise<
   Array<{
     id: string

@@ -24,6 +24,7 @@ import { prisma } from "../services/prisma.js"
 import {
   addVideoToLoungeQueue,
   bindLoungeSession,
+  clearLoungePlaylist,
   pairWithScreenCode,
   seekLoungeTo,
   sendLoungeTransportCommand,
@@ -75,11 +76,22 @@ async function bootstrapCastSession(params: {
         let session = lounge
         const [first, ...rest] = unplayed
         if (first) {
+          // setLoungePlaylist replaces whatever the receiver was doing, so
+          // this alone already clears out anything left over from a prior
+          // session (this room's or another CueBall room's, on the same
+          // physical TV).
           session = await setLoungePlaylist(session, first.youtubeVideoId)
           for (const item of rest) {
             session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
           }
           state = { ...state, currentQueueItemId: first.id, isPlaying: true }
+        } else {
+          // Nothing to play yet, so nothing above would touch the
+          // receiver — but it could still have another session's queue
+          // loaded (e.g. one that was never cleanly disconnected). Clear
+          // it explicitly rather than starting connected in-app while the
+          // TV silently keeps playing whatever it already had queued.
+          session = await clearLoungePlaylist(session)
         }
         await setLoungeSessionState(roomId, session)
       })
@@ -221,6 +233,26 @@ export function registerCastHandlers(io: Server): void {
         if (!participant?.isHost) {
           ack?.({ error: "Only the host can end the cast session" })
           return
+        }
+
+        // Clear the receiver's own live queue too, not just our
+        // bookkeeping — otherwise the physical TV just keeps auto-advancing
+        // through this room's leftover queue on its own, and if a
+        // DIFFERENT CueBall room connects to the same TV later (same
+        // physical device, e.g. via TV-code pairing again), that new
+        // room's session can start with the previous room's videos still
+        // sitting live on the receiver, playing on their own and never
+        // reconciling against the new room's queue.
+        try {
+          await withLoungeLock(roomId, async () => {
+            const lounge = await getLoungeSessionState(roomId)
+            if (lounge) await clearLoungePlaylist(lounge)
+          })
+        } catch (err) {
+          console.error(
+            `Failed to clear the live Cast session for room ${roomId}`,
+            err,
+          )
         }
 
         await clearCastState(roomId)

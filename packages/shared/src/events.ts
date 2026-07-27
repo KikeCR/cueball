@@ -26,6 +26,7 @@ export const SocketEvents = {
   QueueClear: "queue:clear",
   QueueClearHistory: "queue:clear-history",
   RoomSetRepeat: "room:set-repeat",
+  RoomRename: "room:rename",
 
   PlaylistSyncFailed: "playlist:sync-failed",
 
@@ -120,6 +121,11 @@ export interface QueueClearResult {
 
 export interface RoomSetRepeatPayload {
   enabled: boolean
+}
+
+/** An empty/blank name clears the room's custom name, falling back to the room code as the display name. */
+export interface RoomRenamePayload {
+  name: string
 }
 
 export interface PlaylistSyncFailedPayload {
