@@ -143,6 +143,7 @@ describe("CastControlsCard", () => {
       isPlaying: false,
       currentQueueItemId: null,
     }
+    queueState = [makeQueueItem()]
     const card = new CastControlsCardPageObject({ isHost: false })
 
     expect(await card.findText("Living Room TV")).toBeInTheDocument()
@@ -152,6 +153,20 @@ describe("CastControlsCard", () => {
 
     await card.clickSkip()
     expect(sendCastCommandMock).toHaveBeenCalledWith("skip")
+  })
+
+  it("disables skip when nothing is queued up next", async () => {
+    castState = {
+      connected: true,
+      deviceName: "Living Room TV",
+      isPlaying: true,
+      currentQueueItemId: "item-1",
+    }
+    queueState = [makeQueueItem({ playedAt: null })]
+    const card = new CastControlsCardPageObject({ isHost: true })
+
+    await card.findText("Living Room TV")
+    expect(card.skipButton).toBeDisabled()
   })
 
   it("sends pause when the video is currently playing", async () => {
