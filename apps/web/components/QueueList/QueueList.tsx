@@ -34,6 +34,8 @@ interface QueueListProps {
   onSetRepeat?: (enabled: boolean) => void
   /** True while a drag-reorder is being confirmed against the real YouTube playlist. */
   reordering?: boolean
+  /** True while a Cast-mode "repeat the queue" restart is pushing the replayed lap back onto the live TV queue — a multi-second, multi-request process that would otherwise look stalled. */
+  repeating?: boolean
   /** A Cast-mode room's currently-playing item — already on the TV, so it's hidden from the queue rather than shown as just another upcoming video. Always null for playlist-sync rooms. */
   excludeQueueItemId?: string | null
 }
@@ -51,6 +53,7 @@ export function QueueList({
   repeatEnabled = false,
   onSetRepeat,
   reordering = false,
+  repeating = false,
   excludeQueueItemId = null,
 }: QueueListProps) {
   const sensors = useSensors(
@@ -92,11 +95,22 @@ export function QueueList({
   }
 
   const upcomingList = (
-    <ol className={cn("flex flex-col gap-3", reordering && "opacity-60")}>
+    <ol
+      className={cn(
+        "flex flex-col gap-3",
+        (reordering || repeating) && "opacity-60",
+      )}
+    >
       {reordering && (
         <li className="flex items-center gap-1.5 rounded-md border border-border bg-surface-hover px-3 py-2 text-xs text-muted">
           <Loader2 className="size-3.5 animate-spin" /> Updating the YouTube
           playlist order…
+        </li>
+      )}
+      {repeating && (
+        <li className="flex items-center gap-1.5 rounded-md border border-border bg-surface-hover px-3 py-2 text-xs text-muted">
+          <Loader2 className="size-3.5 animate-spin" /> Restarting the
+          queue…
         </li>
       )}
       {manualOrderActive && (

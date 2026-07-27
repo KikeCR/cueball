@@ -98,6 +98,14 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
     // bootstrapCastSession does when a Cast session first connects.
     const [upNext, ...rest] = restarted
     if (upNext) {
+      // Pushing a whole lap back one video at a time is a handful of
+      // sequential network round-trips to YouTube — long enough that the
+      // room would otherwise look stalled with nothing playing and no
+      // feedback. Flip this on before that loop starts so the UI can show
+      // a loading state instead.
+      await setCastState(roomId, { ...cast, restarting: true })
+      await broadcastRoomState(io, roomId)
+
       let session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
       for (const item of rest) {
         session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
@@ -107,12 +115,14 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
         ...cast,
         currentQueueItemId: upNext.id,
         isPlaying: true,
+        restarting: false,
       })
     } else {
       await setCastState(roomId, {
         ...cast,
         currentQueueItemId: null,
         isPlaying: false,
+        restarting: false,
       })
     }
     await broadcastRoomState(io, roomId)
@@ -129,23 +139,40 @@ async function pollRoom(io: Server, roomId: string): Promise<void> {
     ...cast,
     currentQueueItemId: nextItem?.id ?? null,
     isPlaying: true,
+    restarting: false,
   })
   await broadcastRoomState(io, roomId)
 }
 
 /** Starts the background poll loop; call once at server startup. */
 export function startCastLoungePolling(io: Server): void {
+  // A repeat-restart pushes a whole lap back onto the Lounge queue with one
+  // sequential rebind+POST round-trip per video, which can easily take
+  // longer than one poll interval. Without this guard, `setInterval` would
+  // start a second sweep on top of a still-running one, and the two would
+  // race on the same room's cast state and Lounge session — e.g. the second
+  // sweep re-reading `cast.currentQueueItemId` before the first has updated
+  // it, marking the same video played twice with a bogus later timestamp,
+  // corrupting its place in the next repeat lap. Skipping an overlapping
+  // tick instead just delays polling until the current sweep finishes.
+  let sweeping = false
   setInterval(() => {
+    if (sweeping) return
+    sweeping = true
     void (async () => {
-      const keys = await redis.keys(LOUNGE_KEY_PATTERN)
-      for (const key of keys) {
-        const roomId = roomIdFromLoungeKey(key)
-        if (!roomId) continue
-        try {
-          await pollRoom(io, roomId)
-        } catch (err) {
-          console.error(`Cast lounge poll failed for room ${roomId}`, err)
+      try {
+        const keys = await redis.keys(LOUNGE_KEY_PATTERN)
+        for (const key of keys) {
+          const roomId = roomIdFromLoungeKey(key)
+          if (!roomId) continue
+          try {
+            await pollRoom(io, roomId)
+          } catch (err) {
+            console.error(`Cast lounge poll failed for room ${roomId}`, err)
+          }
         }
+      } finally {
+        sweeping = false
       }
     })()
   }, POLL_INTERVAL_MS)
