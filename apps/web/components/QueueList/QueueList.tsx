@@ -26,6 +26,8 @@ interface QueueListProps {
   onRemove: (queueItemId: string) => void
   onReorder?: (orderedQueueItemIds: string[]) => void
   onSetPlayed?: (queueItemId: string, played: boolean) => void
+  /** Adds a played video back into the active queue. Separate from onSetPlayed so it can stay available in Cast-mode rooms, which otherwise leave played-state fully to the TV and don't get onSetPlayed at all. */
+  onRestoreToQueue?: (queueItemId: string) => void
   onClearHistory?: () => void
   /** True once the host has manually reordered the queue. */
   manualOrderActive?: boolean
@@ -48,6 +50,7 @@ export function QueueList({
   onRemove,
   onReorder,
   onSetPlayed,
+  onRestoreToQueue,
   onClearHistory,
   manualOrderActive = false,
   repeatEnabled = false,
@@ -304,11 +307,11 @@ export function QueueList({
                     </p>
                   </div>
 
-                  {canModerate && onSetPlayed && (
+                  {canModerate && onRestoreToQueue && (
                     <button
                       type="button"
                       aria-label="Mark as not played"
-                      onClick={() => onSetPlayed(item.id, false)}
+                      onClick={() => onRestoreToQueue(item.id)}
                       className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-text"
                     >
                       <Undo2 className="size-4" />

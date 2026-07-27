@@ -504,6 +504,46 @@ export function registerQueueHandlers(io: Server): void {
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
+          
+          if (!payload.played && room?.mode === RoomMode.CAST) {
+            try {
+              const lounge = await getLoungeSessionState(roomId)
+              if (lounge) {
+                const cast = await getCastState(roomId)
+                if (cast?.currentQueueItemId) {
+                  const updated = await addVideoToLoungeQueue(
+                    lounge,
+                    found.item.youtubeVideoId,
+                  )
+                  await setLoungeSessionState(roomId, updated)
+                } else {
+                  const updated = await setLoungePlaylist(
+                    lounge,
+                    found.item.youtubeVideoId,
+                  )
+                  await setLoungeSessionState(roomId, updated)
+                  if (cast) {
+                    await setCastState(roomId, {
+                      ...cast,
+                      currentQueueItemId: found.item.id,
+                      isPlaying: true,
+                    })
+                    await broadcastRoomState(io, roomId)
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(
+                `Failed to push restored video to the live Cast session for room ${roomId}`,
+                err,
+              )
+              notifyPlaylistSyncFailed(
+                io,
+                roomId,
+                "Couldn't add that video back to the TV's live queue.",
+              )
+            }
+          }
         })()
       },
     )

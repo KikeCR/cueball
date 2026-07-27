@@ -325,8 +325,8 @@ describe("QueueList", () => {
     expect(screen.getAllByLabelText("Upvote")).toHaveLength(1)
   })
 
-  it("lets a played video be marked unplayed again", async () => {
-    const onSetPlayed = vi.fn()
+  it("lets a played video be added back to the queue", async () => {
+    const onRestoreToQueue = vi.fn()
     const item = makeItem({ playedAt: new Date().toISOString() })
     const queueList = new QueueListPageObject({
       queue: [item],
@@ -334,11 +334,26 @@ describe("QueueList", () => {
       selfId: "p1",
       onVote: vi.fn(),
       onRemove: vi.fn(),
-      onSetPlayed,
+      onRestoreToQueue,
     })
 
     await queueList.clickMarkUnplayed()
-    expect(onSetPlayed).toHaveBeenCalledWith("q1", false)
+    expect(onRestoreToQueue).toHaveBeenCalledWith("q1")
+  })
+
+  it("keeps the restore-to-queue button available even without onSetPlayed (Cast-mode rooms)", () => {
+    const item = makeItem({ playedAt: new Date().toISOString() })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onRestoreToQueue: vi.fn(),
+    })
+
+    expect(queueList.markPlayedButton).not.toBeInTheDocument()
+    expect(queueList.markUnplayedButton).toBeInTheDocument()
   })
 
   it("doesn't show a played section when nothing has been played", () => {
