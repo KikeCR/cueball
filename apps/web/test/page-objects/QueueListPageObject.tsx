@@ -11,6 +11,7 @@ interface QueueListProps {
   onRemove: (queueItemId: string) => void
   onReorder?: (orderedQueueItemIds: string[]) => void
   onSetPlayed?: (queueItemId: string, played: boolean) => void
+  onRestoreToQueue?: (queueItemId: string) => void
   onClearHistory?: () => void
   manualOrderActive?: boolean
   repeatEnabled?: boolean

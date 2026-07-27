@@ -317,6 +317,9 @@ function RoomView({ roomCode }: { roomCode: string }) {
             onSetPlayed={
               room?.mode === CAST_MODE ? undefined : handleSetPlayed
             }
+            onRestoreToQueue={(queueItemId) =>
+              handleSetPlayed(queueItemId, false)
+            }
             onClearHistory={() => setClearHistoryDialogOpen(true)}
             manualOrderActive={Boolean(room?.manualQueueOrder)}
             repeatEnabled={Boolean(room?.repeatEnabled)}
