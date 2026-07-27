@@ -222,16 +222,45 @@ export async function findQueueItemForPlayedToggle(params: {
   return { item }
 }
 
-/** Applies a played/unplayed toggle already confirmed against the real playlist. */
+/**
+ * Applies a played/unplayed toggle already confirmed against the real
+ * playlist. Un-marking played ("restore to queue") is treated like a fresh
+ * add rather than resuming where it left off: its old votes/score are
+ * stale relative to whatever's been added or voted on since it played, so
+ * they're cleared back to neutral, and it's placed last — bumping
+ * `position` past everything else (for manual-order rooms) and `createdAt`
+ * to now (so it also sorts last among any score ties under vote-driven
+ * order, the same way a brand new item naturally would).
+ */
 export async function commitQueueItemPlayed(params: {
   queueItemId: string
   roomId: string
   played: boolean
 }): Promise<QueueItemWithVotes> {
-  const updated = await prisma.queueItem.update({
-    where: { id: params.queueItemId },
-    data: { playedAt: params.played ? new Date() : null },
-    include: { votes: true },
+  const updated = await prisma.$transaction(async (tx) => {
+    if (params.played) {
+      return tx.queueItem.update({
+        where: { id: params.queueItemId },
+        data: { playedAt: new Date() },
+        include: { votes: true },
+      })
+    }
+
+    await tx.vote.deleteMany({ where: { queueItemId: params.queueItemId } })
+    const last = await tx.queueItem.aggregate({
+      where: { roomId: params.roomId },
+      _max: { position: true },
+    })
+    return tx.queueItem.update({
+      where: { id: params.queueItemId },
+      data: {
+        playedAt: null,
+        score: 0,
+        position: (last._max.position ?? -1) + 1,
+        createdAt: new Date(),
+      },
+      include: { votes: true },
+    })
   })
   await touchRoomActivity(params.roomId)
   return updated
@@ -384,17 +413,42 @@ export async function findRepeatRestartItems(params: {
 /**
  * Resets the given (already confirmed against the real playlist) items back
  * to unplayed — a subset of findRepeatRestartItems's result if any failed to
- * re-add to the real playlist.
+ * re-add to the real playlist. `queueItemIds` must stay in the order they
+ * should come back in (findRepeatRestartItems's oldest-played-first order),
+ * since restarting the whole history is also treated like a fresh add for
+ * each item: prior votes/score are cleared back to neutral (same reasoning
+ * as a single-item restore, see commitQueueItemPlayed), which would
+ * otherwise leave the in-app queue's default vote-driven sort to fall back
+ * on stale `createdAt` values that don't reflect "the order they were last
+ * on" — so `position`/`createdAt` are both rewritten to match the given
+ * order instead, the same as commitQueueItemPlayed does for a lone restore,
+ * just relative to each other rather than all bumped to "now".
  */
 export async function commitQueueRepeatRestart(params: {
   roomId: string
   queueItemIds: string[]
 }): Promise<void> {
   if (params.queueItemIds.length === 0) return
-  await prisma.queueItem.updateMany({
-    where: { id: { in: params.queueItemIds } },
-    data: { playedAt: null },
+
+  await prisma.vote.deleteMany({
+    where: { queueItemId: { in: params.queueItemIds } },
   })
+
+  const now = Date.now()
+  await prisma.$transaction(
+    params.queueItemIds.map((id, index) =>
+      prisma.queueItem.update({
+        where: { id },
+        data: {
+          playedAt: null,
+          score: 0,
+          position: index,
+          createdAt: new Date(now + index),
+        },
+      }),
+    ),
+  )
+
   await touchRoomActivity(params.roomId)
 }
 

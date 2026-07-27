@@ -32,6 +32,7 @@ import {
   type LoungeSessionState,
 } from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import type { RoomSocket } from "./types.js"
 
@@ -67,19 +68,21 @@ async function bootstrapCastSession(params: {
 
   if (lounge) {
     try {
-      const roomState = await getRoomState(roomId)
-      const unplayed = roomState?.queue.filter((item) => !item.playedAt) ?? []
+      await withLoungeLock(roomId, async () => {
+        const roomState = await getRoomState(roomId)
+        const unplayed = roomState?.queue.filter((item) => !item.playedAt) ?? []
 
-      let session = lounge
-      const [first, ...rest] = unplayed
-      if (first) {
-        session = await setLoungePlaylist(session, first.youtubeVideoId)
-        for (const item of rest) {
-          session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        let session = lounge
+        const [first, ...rest] = unplayed
+        if (first) {
+          session = await setLoungePlaylist(session, first.youtubeVideoId)
+          for (const item of rest) {
+            session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+          }
+          state = { ...state, currentQueueItemId: first.id, isPlaying: true }
         }
-        state = { ...state, currentQueueItemId: first.id, isPlaying: true }
-      }
-      await setLoungeSessionState(roomId, session)
+        await setLoungeSessionState(roomId, session)
+      })
     } catch (err) {
       console.error(
         `Failed to start YouTube lounge session for room ${roomId}`,
@@ -242,28 +245,32 @@ export function registerCastHandlers(io: Server): void {
             return
           }
 
-          const lounge = await getLoungeSessionState(roomId)
-          if (!lounge) {
-            ack?.({ error: "No active cast session" })
-            return
-          }
-
           try {
-            let updated: LoungeSessionState | null = null
-            if (payload.action === "play") {
-              updated = await sendLoungeTransportCommand(lounge, "play")
-            } else if (payload.action === "pause") {
-              updated = await sendLoungeTransportCommand(lounge, "pause")
-            } else if (payload.action === "skip") {
-              updated = await sendLoungeTransportCommand(lounge, "next")
-            } else if (payload.action === "seek") {
-              if (typeof payload.seekSeconds !== "number") {
-                ack?.({ error: "Missing seek time" })
-                return
+            const outcome = await withLoungeLock(roomId, async () => {
+              const lounge = await getLoungeSessionState(roomId)
+              if (!lounge) return { error: "No active cast session" } as const
+
+              let updated: LoungeSessionState | null = null
+              if (payload.action === "play") {
+                updated = await sendLoungeTransportCommand(lounge, "play")
+              } else if (payload.action === "pause") {
+                updated = await sendLoungeTransportCommand(lounge, "pause")
+              } else if (payload.action === "skip") {
+                updated = await sendLoungeTransportCommand(lounge, "next")
+              } else if (payload.action === "seek") {
+                if (typeof payload.seekSeconds !== "number") {
+                  return { error: "Missing seek time" } as const
+                }
+                updated = await seekLoungeTo(lounge, payload.seekSeconds)
               }
-              updated = await seekLoungeTo(lounge, payload.seekSeconds)
+              if (updated) await setLoungeSessionState(roomId, updated)
+              return { ok: true } as const
+            })
+
+            if ("error" in outcome) {
+              ack?.(outcome)
+              return
             }
-            if (updated) await setLoungeSessionState(roomId, updated)
 
             // isPlaying reflects the command just sent, not something
             // polled — the receiver never reliably reports play/pause state

@@ -11,6 +11,7 @@ import {
   addVideoToLoungeQueue,
   removeVideoFromLoungeQueue,
 } from "../services/youtubeLounge.js"
+import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 
 const DEBOUNCE_MS = 4000
@@ -47,31 +48,38 @@ export function scheduleCastQueueSync(io: Server, roomId: string): void {
 }
 
 async function syncCastQueueOrder(roomId: string): Promise<void> {
-  const room = await prisma.room.findUnique({ where: { id: roomId } })
-  if (!room || room.mode !== RoomMode.CAST) return
+  // The whole thing (including the reads) runs under the lock, not just
+  // the Lounge writes — the poller reconciling a video that just finished
+  // can otherwise land between this reading "what's unplayed" and this
+  // acting on it, so this would drop/re-add a set of videos that's already
+  // stale by the time it runs.
+  await withLoungeLock(roomId, async () => {
+    const room = await prisma.room.findUnique({ where: { id: roomId } })
+    if (!room || room.mode !== RoomMode.CAST) return
 
-  const lounge = await getLoungeSessionState(roomId)
-  if (!lounge) return
+    const lounge = await getLoungeSessionState(roomId)
+    if (!lounge) return
 
-  const cast = await getCastState(roomId)
-  const unplayed = await prisma.queueItem.findMany({
-    where: { roomId, playedAt: null },
+    const cast = await getCastState(roomId)
+    const unplayed = await prisma.queueItem.findMany({
+      where: { roomId, playedAt: null },
+    })
+    // Same exclusion as the drag-reorder handler: whatever's currently
+    // playing is already on the TV, not waiting its turn.
+    const ordered = sortQueueItems(unplayed, room.manualQueueOrder).filter(
+      (item) => item.id !== cast?.currentQueueItemId,
+    )
+    if (ordered.length === 0) return
+
+    // No reorder primitive in the Lounge protocol — drop and re-add
+    // everything in the new order, same as the drag-reorder handler.
+    let session = lounge
+    for (const item of ordered) {
+      session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
+    }
+    for (const item of ordered) {
+      session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+    }
+    await setLoungeSessionState(roomId, session)
   })
-  // Same exclusion as the drag-reorder handler: whatever's currently
-  // playing is already on the TV, not waiting its turn.
-  const ordered = sortQueueItems(unplayed, room.manualQueueOrder).filter(
-    (item) => item.id !== cast?.currentQueueItemId,
-  )
-  if (ordered.length === 0) return
-
-  // No reorder primitive in the Lounge protocol — drop and re-add
-  // everything in the new order, same as the drag-reorder handler.
-  let session = lounge
-  for (const item of ordered) {
-    session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
-  }
-  for (const item of ordered) {
-    session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
-  }
-  await setLoungeSessionState(roomId, session)
 }
