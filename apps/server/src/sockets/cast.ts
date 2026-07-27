@@ -183,7 +183,12 @@ export function registerCastHandlers(io: Server): void {
             return
           }
 
-          const pairingCode = payload.pairingCode?.trim()
+          // YouTube TV apps commonly display this code grouped into
+          // chunks with spaces (e.g. "123 458 876 876") for readability —
+          // strip all whitespace, not just the ends, since a user typing
+          // or copying it exactly as shown would otherwise send an invalid
+          // code to YouTube's pairing endpoint.
+          const pairingCode = payload.pairingCode?.replace(/\s+/g, "")
           if (!pairingCode) {
             ack?.({ error: "Enter the code shown in the YouTube app" })
             return

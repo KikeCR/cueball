@@ -127,7 +127,10 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
                 placeholder="Code shown in the YouTube app"
                 className="flex-1"
               />
-              <Button type="submit" disabled={codeConnectPending}>
+              <Button
+                type="submit"
+                disabled={codeConnectPending || !pairingCode.trim()}
+              >
                 {codeConnectPending ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (

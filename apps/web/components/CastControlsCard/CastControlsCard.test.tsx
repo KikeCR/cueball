@@ -102,6 +102,16 @@ describe("CastControlsCard", () => {
     expect(card.pairingCodeInput).toBeInTheDocument()
   })
 
+  it("disables the TV-code submit button until a code is entered", async () => {
+    const card = new CastControlsCardPageObject({ isHost: true })
+    await card.clickToggleCodeEntry()
+
+    expect(card.pairingCodeSubmitButton).toBeDisabled()
+
+    await card.fillPairingCode("abcd1234")
+    expect(card.pairingCodeSubmitButton).not.toBeDisabled()
+  })
+
   it("lets the host connect with a TV code", async () => {
     const card = new CastControlsCardPageObject({ isHost: true })
     await card.clickToggleCodeEntry()
