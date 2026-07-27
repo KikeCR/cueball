@@ -26,6 +26,9 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
   const [codeConnectPending, setCodeConnectPending] = useState(false)
   const nowPlaying =
     queue.find((item) => item.id === cast?.currentQueueItemId) ?? null
+  const hasNext = queue.some(
+    (item) => !item.playedAt && item.id !== cast?.currentQueueItemId,
+  )
 
   const reportCommandError = (err: unknown) => {
     toast.error(
@@ -181,8 +184,8 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
             size="sm"
             className="w-9 px-0"
             aria-label="Skip to next video"
-            title="Skip to next video"
-            disabled={skipPending}
+            title={hasNext ? "Skip to next video" : "Nothing queued next"}
+            disabled={skipPending || !hasNext}
             onClick={() => void handleSkip()}
           >
             {skipPending ? (

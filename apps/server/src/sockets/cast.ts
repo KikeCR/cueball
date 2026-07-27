@@ -84,7 +84,19 @@ async function bootstrapCastSession(params: {
           for (const item of rest) {
             session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
           }
-          state = { ...state, currentQueueItemId: first.id, isPlaying: true }
+          // Sending the command isn't the same as the TV actually playing
+          // it — same reasoning as the repeat-restart path in
+          // castLoungePolling.ts. Track what we're waiting on and leave
+          // isPlaying false with restarting true; the poller's normal
+          // "receiver moved to a new video" handling confirms it and
+          // clears the loading state once the TV actually catches up,
+          // whether that's instant or takes a while to buffer.
+          state = {
+            ...state,
+            currentQueueItemId: first.id,
+            isPlaying: false,
+            restarting: true,
+          }
         } else {
           // Nothing to play yet, so nothing above would touch the
           // receiver — but it could still have another session's queue
