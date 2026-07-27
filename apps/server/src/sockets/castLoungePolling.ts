@@ -25,6 +25,14 @@ import { restartQueueIfRepeating } from "./queueRepeat.js"
 const POLL_INTERVAL_MS = 2000
 const LOUNGE_KEY_PATTERN = "room:*:lounge"
 
+// A "stopped" report from the receiver might be a real end-of-video, or it
+// might just be a brief blip (buffering, an ad, a quality change) while
+// the same video is still actually playing fine. Acting on it right away
+// would force a reload, which looks like a random pause. So we wait for
+// it to show up twice in a row before believing it.
+const STOP_CONFIRM_TICKS = 2
+const pendingStopTicks = new Map<string, number>()
+
 function roomIdFromLoungeKey(key: string): string | null {
   return /^room:(.+):lounge$/.exec(key)?.[1] ?? null
 }
@@ -70,7 +78,22 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   // since the last poll. Play/pause state is owned by the CastCommand
   // handler (the receiver doesn't reliably report it back), not by this
   // poller.
-  if ((currentItem?.youtubeVideoId ?? null) === nowPlaying.videoId) return
+  if ((currentItem?.youtubeVideoId ?? null) === nowPlaying.videoId) {
+    pendingStopTicks.delete(roomId)
+    return
+  }
+
+  // Only a "stop" needs the extra confirmation tick. A change to a
+  // different video, or a skip, is trusted right away since that's a real
+  // signal, not just an absence of one.
+  if (nowPlaying.videoId === null && currentItem) {
+    const ticks = (pendingStopTicks.get(roomId) ?? 0) + 1
+    if (ticks < STOP_CONFIRM_TICKS) {
+      pendingStopTicks.set(roomId, ticks)
+      return
+    }
+  }
+  pendingStopTicks.delete(roomId)
 
   // The video changed — either it finished naturally and the receiver
   // auto-advanced into the next one on its own, a skip command landed, or
