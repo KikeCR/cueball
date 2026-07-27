@@ -17,6 +17,7 @@ import {
   setLoungePlaylist,
 } from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { withLoungeLock } from "./loungeLock.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
 const POLL_INTERVAL_MS = 4000
@@ -37,6 +38,15 @@ function roomIdFromLoungeKey(key: string): string | null {
  * happened because a video simply finished or because someone hit skip.
  */
 async function pollRoom(io: Server, roomId: string): Promise<void> {
+  // The whole reconcile-and-possibly-mutate cycle runs under the lock, not
+  // just the writes at the end — this is exactly the flow a vote-driven
+  // resync (castQueueSync.ts) or a fresh add's immediate push (queue.ts)
+  // can otherwise land in the middle of, e.g. right as a video finishes and
+  // this is deciding what's playing next.
+  await withLoungeLock(roomId, () => reconcileRoom(io, roomId))
+}
+
+async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   const lounge = await getLoungeSessionState(roomId)
   if (!lounge) return
 

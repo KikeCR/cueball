@@ -26,6 +26,7 @@ vi.mock("./prisma.js", () => {
       findUnique: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
       update: vi.fn(),
       findMany: vi.fn(),
     },
@@ -656,6 +657,8 @@ describe("findQueueItemForPlayedToggle", () => {
 describe("commitQueueItemPlayed", () => {
   beforeEach(() => {
     vi.mocked(prisma.queueItem.update).mockReset()
+    vi.mocked(prisma.queueItem.aggregate).mockReset()
+    vi.mocked(prisma.vote.deleteMany).mockReset()
     vi.mocked(touchRoomActivity).mockReset()
   })
 
@@ -676,10 +679,51 @@ describe("commitQueueItemPlayed", () => {
       data: { playedAt: expect.any(Date) },
       include: { votes: true },
     })
+    expect(prisma.vote.deleteMany).not.toHaveBeenCalled()
     expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 
-  it("clears playedAt when un-marking", async () => {
+  it("restoring to the queue clears its votes/score and places it last", async () => {
+    vi.mocked(prisma.queueItem.aggregate).mockResolvedValue({
+      _max: { position: 4 },
+    } as never)
+    vi.mocked(prisma.queueItem.update).mockResolvedValue({
+      id: "item-1",
+      playedAt: null,
+      score: 0,
+      position: 5,
+    } as never)
+
+    await commitQueueItemPlayed({
+      queueItemId: "item-1",
+      roomId: "room-1",
+      played: false,
+    })
+
+    expect(prisma.vote.deleteMany).toHaveBeenCalledWith({
+      where: { queueItemId: "item-1" },
+    })
+    expect(prisma.queueItem.aggregate).toHaveBeenCalledWith({
+      where: { roomId: "room-1" },
+      _max: { position: true },
+    })
+    expect(prisma.queueItem.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: {
+        playedAt: null,
+        score: 0,
+        position: 5,
+        createdAt: expect.any(Date),
+      },
+      include: { votes: true },
+    })
+    expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
+  })
+
+  it("restoring the first-ever item to an empty room places it at position 0", async () => {
+    vi.mocked(prisma.queueItem.aggregate).mockResolvedValue({
+      _max: { position: null },
+    } as never)
     vi.mocked(prisma.queueItem.update).mockResolvedValue({
       id: "item-1",
       playedAt: null,
@@ -691,11 +735,9 @@ describe("commitQueueItemPlayed", () => {
       played: false,
     })
 
-    expect(prisma.queueItem.update).toHaveBeenCalledWith({
-      where: { id: "item-1" },
-      data: { playedAt: null },
-      include: { votes: true },
-    })
+    expect(prisma.queueItem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ position: 0 }) }),
+    )
   })
 })
 
@@ -868,27 +910,52 @@ describe("findRepeatRestartItems", () => {
 
 describe("commitQueueRepeatRestart", () => {
   beforeEach(() => {
-    vi.mocked(prisma.queueItem.updateMany).mockReset()
+    vi.mocked(prisma.queueItem.update).mockReset()
+    vi.mocked(prisma.vote.deleteMany).mockReset()
     vi.mocked(touchRoomActivity).mockReset()
   })
 
   it("does nothing for an empty list", async () => {
     await commitQueueRepeatRestart({ roomId: "room-1", queueItemIds: [] })
 
-    expect(prisma.queueItem.updateMany).not.toHaveBeenCalled()
+    expect(prisma.queueItem.update).not.toHaveBeenCalled()
+    expect(prisma.vote.deleteMany).not.toHaveBeenCalled()
     expect(touchRoomActivity).not.toHaveBeenCalled()
   })
 
-  it("resets the given items back to unplayed", async () => {
+  it("resets the given items back to unplayed, clears their votes, and preserves their given order", async () => {
     await commitQueueRepeatRestart({
       roomId: "room-1",
       queueItemIds: ["item-1", "item-2"],
     })
 
-    expect(prisma.queueItem.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: ["item-1", "item-2"] } },
-      data: { playedAt: null },
+    expect(prisma.vote.deleteMany).toHaveBeenCalledWith({
+      where: { queueItemId: { in: ["item-1", "item-2"] } },
     })
+    expect(prisma.queueItem.update).toHaveBeenCalledWith({
+      where: { id: "item-1" },
+      data: {
+        playedAt: null,
+        score: 0,
+        position: 0,
+        createdAt: expect.any(Date),
+      },
+    })
+    expect(prisma.queueItem.update).toHaveBeenCalledWith({
+      where: { id: "item-2" },
+      data: {
+        playedAt: null,
+        score: 0,
+        position: 1,
+        createdAt: expect.any(Date),
+      },
+    })
+    // item-1 played first (oldest), so it must sort before item-2 once both
+    // are tied at score 0 — the whole point of rewriting createdAt here.
+    const [firstCall, secondCall] = vi.mocked(prisma.queueItem.update).mock.calls
+    const firstCreatedAt = (firstCall?.[0].data as { createdAt: Date }).createdAt
+    const secondCreatedAt = (secondCall?.[0].data as { createdAt: Date }).createdAt
+    expect(firstCreatedAt.getTime()).toBeLessThan(secondCreatedAt.getTime())
     expect(touchRoomActivity).toHaveBeenCalledWith("room-1")
   })
 })

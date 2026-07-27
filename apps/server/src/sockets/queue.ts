@@ -51,6 +51,7 @@ import {
 } from "../redis/castLoungeSession.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { scheduleCastQueueSync } from "./castQueueSync.js"
+import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
@@ -151,25 +152,27 @@ export function registerQueueHandlers(io: Server): void {
         // own live queue (something already is).
         if (room.mode === RoomMode.CAST) {
           try {
-            const lounge = await getLoungeSessionState(roomId)
-            if (lounge) {
-              const cast = await getCastState(roomId)
-              if (cast?.currentQueueItemId) {
-                const updated = await addVideoToLoungeQueue(lounge, videoId)
-                await setLoungeSessionState(roomId, updated)
-              } else {
-                const updated = await setLoungePlaylist(lounge, videoId)
-                await setLoungeSessionState(roomId, updated)
-                if (cast) {
-                  await setCastState(roomId, {
-                    ...cast,
-                    currentQueueItemId: queueItem.id,
-                    isPlaying: true,
-                  })
-                  await broadcastRoomState(io, roomId)
+            await withLoungeLock(roomId, async () => {
+              const lounge = await getLoungeSessionState(roomId)
+              if (lounge) {
+                const cast = await getCastState(roomId)
+                if (cast?.currentQueueItemId) {
+                  const updated = await addVideoToLoungeQueue(lounge, videoId)
+                  await setLoungeSessionState(roomId, updated)
+                } else {
+                  const updated = await setLoungePlaylist(lounge, videoId)
+                  await setLoungeSessionState(roomId, updated)
+                  if (cast) {
+                    await setCastState(roomId, {
+                      ...cast,
+                      currentQueueItemId: queueItem.id,
+                      isPlaying: true,
+                    })
+                    await broadcastRoomState(io, roomId)
+                  }
                 }
               }
-            }
+            })
           } catch (err) {
             console.error(
               `Failed to push new video to the live Cast session for room ${roomId}`,
@@ -298,14 +301,16 @@ export function registerQueueHandlers(io: Server): void {
           // excludeQueueItemId).
           if (room?.mode === RoomMode.CAST) {
             try {
-              const lounge = await getLoungeSessionState(roomId)
-              if (lounge) {
-                const updated = await removeVideoFromLoungeQueue(
-                  lounge,
-                  found.item.youtubeVideoId,
-                )
-                await setLoungeSessionState(roomId, updated)
-              }
+              await withLoungeLock(roomId, async () => {
+                const lounge = await getLoungeSessionState(roomId)
+                if (lounge) {
+                  const updated = await removeVideoFromLoungeQueue(
+                    lounge,
+                    found.item.youtubeVideoId,
+                  )
+                  await setLoungeSessionState(roomId, updated)
+                }
+              })
             } catch (err) {
               console.error(
                 `Failed to remove video from the live Cast session for room ${roomId}`,
@@ -392,26 +397,28 @@ export function registerQueueHandlers(io: Server): void {
           // lands.
           if (room?.mode === RoomMode.CAST) {
             try {
-              const lounge = await getLoungeSessionState(roomId)
-              if (lounge) {
-                // prepared.items already excludes the currently-playing
-                // item (see excludeQueueItemId above), so this is exactly
-                // the receiver's "upcoming" queue.
-                let session = lounge
-                for (const item of prepared.items) {
-                  session = await removeVideoFromLoungeQueue(
-                    session,
-                    item.youtubeVideoId,
-                  )
+              await withLoungeLock(roomId, async () => {
+                const lounge = await getLoungeSessionState(roomId)
+                if (lounge) {
+                  // prepared.items already excludes the currently-playing
+                  // item (see excludeQueueItemId above), so this is exactly
+                  // the receiver's "upcoming" queue.
+                  let session = lounge
+                  for (const item of prepared.items) {
+                    session = await removeVideoFromLoungeQueue(
+                      session,
+                      item.youtubeVideoId,
+                    )
+                  }
+                  for (const item of prepared.items) {
+                    session = await addVideoToLoungeQueue(
+                      session,
+                      item.youtubeVideoId,
+                    )
+                  }
+                  await setLoungeSessionState(roomId, session)
                 }
-                for (const item of prepared.items) {
-                  session = await addVideoToLoungeQueue(
-                    session,
-                    item.youtubeVideoId,
-                  )
-                }
-                await setLoungeSessionState(roomId, session)
-              }
+              })
             } catch (err) {
               console.error(
                 `Failed to sync reordered queue to the live Cast session for room ${roomId}`,
@@ -504,34 +511,41 @@ export function registerQueueHandlers(io: Server): void {
 
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
-          
+
+          // Un-marking played is how a Cast-mode room adds a video back to
+          // the active queue (it has no manual "mark as played" button, so
+          // this is the only path for it) — push it onto the live TV queue
+          // too, the same as a fresh QueueAdd does, or it'd sit restored in
+          // the app but never actually play again.
           if (!payload.played && room?.mode === RoomMode.CAST) {
             try {
-              const lounge = await getLoungeSessionState(roomId)
-              if (lounge) {
-                const cast = await getCastState(roomId)
-                if (cast?.currentQueueItemId) {
-                  const updated = await addVideoToLoungeQueue(
-                    lounge,
-                    found.item.youtubeVideoId,
-                  )
-                  await setLoungeSessionState(roomId, updated)
-                } else {
-                  const updated = await setLoungePlaylist(
-                    lounge,
-                    found.item.youtubeVideoId,
-                  )
-                  await setLoungeSessionState(roomId, updated)
-                  if (cast) {
-                    await setCastState(roomId, {
-                      ...cast,
-                      currentQueueItemId: found.item.id,
-                      isPlaying: true,
-                    })
-                    await broadcastRoomState(io, roomId)
+              await withLoungeLock(roomId, async () => {
+                const lounge = await getLoungeSessionState(roomId)
+                if (lounge) {
+                  const cast = await getCastState(roomId)
+                  if (cast?.currentQueueItemId) {
+                    const updated = await addVideoToLoungeQueue(
+                      lounge,
+                      found.item.youtubeVideoId,
+                    )
+                    await setLoungeSessionState(roomId, updated)
+                  } else {
+                    const updated = await setLoungePlaylist(
+                      lounge,
+                      found.item.youtubeVideoId,
+                    )
+                    await setLoungeSessionState(roomId, updated)
+                    if (cast) {
+                      await setCastState(roomId, {
+                        ...cast,
+                        currentQueueItemId: found.item.id,
+                        isPlaying: true,
+                      })
+                      await broadcastRoomState(io, roomId)
+                    }
                   }
                 }
-              }
+              })
             } catch (err) {
               console.error(
                 `Failed to push restored video to the live Cast session for room ${roomId}`,
