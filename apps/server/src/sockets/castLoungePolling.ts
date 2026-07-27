@@ -77,11 +77,27 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   // tracked, or (once idle) still reporting nothing, either way unchanged
   // since the last poll. Play/pause state is owned by the CastCommand
   // handler (the receiver doesn't reliably report it back), not by this
-  // poller.
+  // poller. The one exception is a video we were still waiting on (see
+  // "restarting" below) actually catching up to what we already thought
+  // was playing — that still needs to confirm it and clear the loading
+  // state, even though nothing looks different by video id.
   if ((currentItem?.youtubeVideoId ?? null) === nowPlaying.videoId) {
     pendingStopTicks.delete(roomId)
+    if (cast.restarting && nowPlaying.videoId !== null) {
+      await setCastState(roomId, { ...cast, isPlaying: true, restarting: false })
+      await broadcastRoomState(io, roomId)
+    }
     return
   }
+
+  // We already told the receiver what to load and it just hasn't caught up
+  // yet — a still-null status here doesn't mean anything new happened, the
+  // TV is just buffering. Leave the loading indicator up and wait for a
+  // later tick to pick up once it actually starts (handled further down as
+  // an ordinary "moved to a new video" case). Without this, every tick
+  // spent buffering would look like a fresh stop and re-send the same
+  // "play this" command over and over, which only makes the wait longer.
+  if (nowPlaying.videoId === null && cast.restarting) return
 
   // Only a "stop" needs the extra confirmation tick. A change to a
   // different video, or a skip, is trusted right away since that's a real
@@ -167,6 +183,23 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
         return
       }
 
+      // We've told the receiver to load upNext, but it can take a while to
+      // actually start playing on its end (buffering, cold start after
+      // sitting idle) — sending the command isn't the same as it actually
+      // playing. So we track which video we're waiting on without marking
+      // it playing yet. restarting stays true, and the next poll's normal
+      // "receiver moved to a new video" handling further down is what
+      // confirms it really started and clears the loading state — keeping
+      // the loading indicator honestly in sync with the TV instead of the
+      // app jumping ahead of it.
+      await setCastState(roomId, {
+        ...cast,
+        currentQueueItemId: upNext.id,
+        isPlaying: false,
+        restarting: true,
+      })
+      await broadcastRoomState(io, roomId)
+
       for (const item of rest) {
         try {
           session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
@@ -178,20 +211,15 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
         }
       }
       await setLoungeSessionState(roomId, session)
-      await setCastState(roomId, {
-        ...cast,
-        currentQueueItemId: upNext.id,
-        isPlaying: true,
-        restarting: false,
-      })
-    } else {
-      await setCastState(roomId, {
-        ...cast,
-        currentQueueItemId: null,
-        isPlaying: false,
-        restarting: false,
-      })
+      return
     }
+
+    await setCastState(roomId, {
+      ...cast,
+      currentQueueItemId: null,
+      isPlaying: false,
+      restarting: false,
+    })
     await broadcastRoomState(io, roomId)
     return
   }

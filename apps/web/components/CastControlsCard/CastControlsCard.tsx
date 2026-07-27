@@ -206,17 +206,28 @@ export function CastControlsCard({ isHost }: CastControlsCardProps) {
           )}
         </div>
       </div>
-      {nowPlaying && (
-        <div className="flex items-center gap-3">
-          {nowPlaying.thumbnailUrl && (
-            <img
-              src={nowPlaying.thumbnailUrl}
-              alt=""
-              className="h-10 w-16 rounded-sm object-cover"
-            />
-          )}
-          <p className="truncate text-sm font-semibold">{nowPlaying.title}</p>
+      {cast.restarting ? (
+        <div className="flex items-center gap-1.5 text-xs text-muted">
+          <Loader2 className="size-3.5 animate-spin" />
+          {nowPlaying
+            ? `Starting "${nowPlaying.title}"…`
+            : "Restarting the queue…"}
         </div>
+      ) : (
+        nowPlaying && (
+          <div className="flex items-center gap-3">
+            {nowPlaying.thumbnailUrl && (
+              <img
+                src={nowPlaying.thumbnailUrl}
+                alt=""
+                className="h-10 w-16 rounded-sm object-cover"
+              />
+            )}
+            <p className="truncate text-sm font-semibold">
+              {nowPlaying.title}
+            </p>
+          </div>
+        )
       )}
     </div>
   )
