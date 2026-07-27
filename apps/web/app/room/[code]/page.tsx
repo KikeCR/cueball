@@ -1,9 +1,25 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
-import { Users, ListVideo, Plus, Youtube, Cast, Loader2, Trash2 } from "lucide-react"
-import { CAST_MODE, type ConfigResponse, type RoomPreview } from "@cueball/shared"
+import {
+  Users,
+  ListVideo,
+  Plus,
+  Youtube,
+  Cast,
+  Loader2,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react"
+import {
+  CAST_MODE,
+  MAX_ROOM_NAME_LENGTH,
+  type ConfigResponse,
+  type RoomPreview,
+} from "@cueball/shared"
 import { api } from "../../../api/client"
 import { RoomProvider, useRoom } from "../../../context/RoomContext"
 import { useToast } from "../../../context/ToastContext"
@@ -41,6 +57,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     setRepeat,
     removeParticipant,
     renameSelf,
+    renameRoom,
   } = useRoom()
   const toast = useToast()
   const [preview, setPreview] = useState<RoomPreview | null>(null)
@@ -49,6 +66,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
   const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false)
   const [reordering, setReordering] = useState(false)
   const [roomExpiryHours, setRoomExpiryHours] = useState<number | null>(null)
+  const [editingRoomName, setEditingRoomName] = useState<string | null>(null)
 
   useEffect(() => {
     api
@@ -158,6 +176,13 @@ function RoomView({ roomCode }: { roomCode: string }) {
     renameSelf(name).catch(reportActionError("Failed to rename"))
   }
 
+  const submitRoomRename = (event: FormEvent) => {
+    event.preventDefault()
+    const name = editingRoomName ?? ""
+    setEditingRoomName(null)
+    renameRoom(name).catch(reportActionError("Failed to rename room"))
+  }
+
   const handleClearQueue = () => {
     setClearQueueDialogOpen(false)
     clearQueue()
@@ -194,7 +219,53 @@ function RoomView({ roomCode }: { roomCode: string }) {
     <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{displayName}</h1>
+          {editingRoomName !== null ? (
+            <form
+              onSubmit={submitRoomRename}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                autoFocus
+                value={editingRoomName}
+                onChange={(event) => setEditingRoomName(event.target.value)}
+                maxLength={MAX_ROOM_NAME_LENGTH}
+                placeholder={roomCode}
+                aria-label="Room name"
+                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-2xl font-bold tracking-tight text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+              <button
+                type="submit"
+                aria-label="Save room name"
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-upvote/15 hover:text-upvote"
+              >
+                <Check className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel"
+                onClick={() => setEditingRoomName(null)}
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
+              >
+                <X className="size-4" />
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-2xl font-bold tracking-tight">
+                {displayName}
+              </h1>
+              {self.isHost && (
+                <button
+                  type="button"
+                  aria-label="Edit room name"
+                  onClick={() => setEditingRoomName(room?.name ?? "")}
+                  className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-text"
+                >
+                  <Pencil className="size-4" />
+                </button>
+              )}
+            </div>
+          )}
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
             <span
               className={cn(

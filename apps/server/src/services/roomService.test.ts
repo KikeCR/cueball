@@ -33,6 +33,7 @@ import {
   orderQueueForRoom,
   removeParticipant,
   renameParticipant,
+  setRoomName,
   setRoomRepeat,
   sortQueueItems,
   sweepExpiredRooms,
@@ -533,5 +534,51 @@ describe("setRoomRepeat", () => {
       data: { repeatEnabled: true },
     })
     expect(result).toEqual({ room })
+  })
+})
+
+describe("setRoomName", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.room.update).mockReset()
+  })
+
+  it("rejects a non-host requester", async () => {
+    const result = await setRoomName({
+      roomId: "room-1",
+      isHost: false,
+      name: "Movie Night",
+    })
+
+    expect(result).toEqual({ error: "Only the host can rename the room" })
+    expect(prisma.room.update).not.toHaveBeenCalled()
+  })
+
+  it("updates the room's name for the host", async () => {
+    const room = { id: "room-1", name: "Movie Night" }
+    vi.mocked(prisma.room.update).mockResolvedValue(room as never)
+
+    const result = await setRoomName({
+      roomId: "room-1",
+      isHost: true,
+      name: "Movie Night",
+    })
+
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "room-1" },
+      data: { name: "Movie Night" },
+    })
+    expect(result).toEqual({ room })
+  })
+
+  it("clears the room's name when given null", async () => {
+    const room = { id: "room-1", name: null }
+    vi.mocked(prisma.room.update).mockResolvedValue(room as never)
+
+    await setRoomName({ roomId: "room-1", isHost: true, name: null })
+
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "room-1" },
+      data: { name: null },
+    })
   })
 })

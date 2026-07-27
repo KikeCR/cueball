@@ -81,6 +81,7 @@ interface RoomContextValue {
   setRepeat: (enabled: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   renameSelf: (name: string) => Promise<void>
+  renameRoom: (name: string) => Promise<void>
   sendCastCommand: (action: CastCommandAction, seekSeconds?: number) => Promise<void>
 }
 
@@ -302,6 +303,12 @@ export function RoomProvider({
     [],
   )
 
+  const renameRoom = useCallback(
+    (name: string) =>
+      emitAction(socketRef.current, SocketEvents.RoomRename, { name }),
+    [],
+  )
+
   const sendCastCommand = useCallback(
     (action: CastCommandAction, seekSeconds?: number) =>
       emitAction(socketRef.current, SocketEvents.CastCommand, {
@@ -337,6 +344,7 @@ export function RoomProvider({
         setRepeat,
         removeParticipant,
         renameSelf,
+        renameRoom,
         sendCastCommand,
       }}
     >

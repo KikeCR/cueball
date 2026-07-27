@@ -1,6 +1,7 @@
 import type { Server } from "socket.io"
 import {
   MAX_NAME_LENGTH,
+  MAX_ROOM_NAME_LENGTH,
   SocketEvents,
   type ActionError,
   type ActionOk,
@@ -9,6 +10,7 @@ import {
   type ParticipantRenamePayload,
   type RoomJoinPayload,
   type RoomJoinResult,
+  type RoomRenamePayload,
   type RoomSetRepeatPayload,
   type RoomStatePayload,
 } from "@cueball/shared"
@@ -17,6 +19,7 @@ import {
   getRoomState,
   removeParticipant,
   renameParticipant,
+  setRoomName,
   setRoomRepeat,
   touchRoomActivity,
 } from "../services/roomService.js"
@@ -226,6 +229,44 @@ export function registerRoomHandlers(io: Server): void {
             roomId,
             isHost: participant.isHost,
             enabled: payload.enabled,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.RoomRename,
+      (
+        payload: RoomRenamePayload,
+        ack?: (result: ActionOk | ActionError) => void,
+      ) => {
+        void (async () => {
+          const { participantId, roomId } = socket.data
+          if (!participantId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const participant = await prisma.participant.findUnique({
+            where: { id: participantId },
+          })
+          if (!participant) {
+            ack?.({ error: "Participant not found" })
+            return
+          }
+
+          const trimmed = payload.name?.trim().slice(0, MAX_ROOM_NAME_LENGTH)
+          const result = await setRoomName({
+            roomId,
+            isHost: participant.isHost,
+            name: trimmed || null,
           })
           if ("error" in result) {
             ack?.({ error: result.error })
