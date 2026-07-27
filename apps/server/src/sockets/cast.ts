@@ -62,6 +62,7 @@ async function bootstrapCastSession(params: {
     casterParticipantId: participantId,
     isPlaying: false,
     currentQueueItemId: null,
+    restarting: false,
   }
 
   if (lounge) {

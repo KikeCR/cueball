@@ -198,6 +198,32 @@ describe("QueueList", () => {
     expect(queueList.reorderingBanner).not.toBeInTheDocument()
   })
 
+  it("shows a restarting banner while a Cast-mode repeat cycle is pushing the lap back onto the TV", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem({ id: "q1" })],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      repeating: true,
+    })
+
+    expect(queueList.repeatingBanner).toBeInTheDocument()
+  })
+
+  it("hides the restarting banner once repeat finishes pushing the new lap", () => {
+    const queueList = new QueueListPageObject({
+      queue: [makeItem({ id: "q1" })],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      repeating: false,
+    })
+
+    expect(queueList.repeatingBanner).not.toBeInTheDocument()
+  })
+
   it("pauses voting for a non-host once the host has set a manual order", () => {
     const onVote = vi.fn()
     const queueList = new QueueListPageObject({

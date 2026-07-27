@@ -16,6 +16,7 @@ interface QueueListProps {
   repeatEnabled?: boolean
   onSetRepeat?: (enabled: boolean) => void
   reordering?: boolean
+  repeating?: boolean
   excludeQueueItemId?: string | null
 }
 
@@ -56,6 +57,10 @@ export class QueueListPageObject {
 
   get reorderingBanner() {
     return screen.queryByText(/updating the youtube playlist order/i)
+  }
+
+  get repeatingBanner() {
+    return screen.queryByText(/restarting the queue/i)
   }
 
   get markPlayedButton() {

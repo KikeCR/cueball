@@ -50,6 +50,7 @@ import {
   setLoungeSessionState,
 } from "../redis/castLoungeSession.js"
 import { broadcastRoomState } from "./broadcast.js"
+import { scheduleCastQueueSync } from "./castQueueSync.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { schedulePlaylistSync } from "./playlistSync.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
@@ -223,8 +224,10 @@ export function registerQueueHandlers(io: Server): void {
           // Votes are frequent enough that gating each one on a live YouTube
           // round-trip would feel laggy, so this stays a debounced
           // best-effort background sync (with a visible failure notice)
-          // rather than the confirm-before-commit flow used below.
+          // rather than the confirm-before-commit flow used below. Both
+          // calls are no-ops for the room mode they don't apply to.
           schedulePlaylistSync(io, roomId)
+          scheduleCastQueueSync(io, roomId)
         })()
       },
     )
@@ -258,34 +261,63 @@ export function registerQueueHandlers(io: Server): void {
             return
           }
 
+          const room = await prisma.room.findUnique({ where: { id: roomId } })
+
           // Confirm the real playlist accepts the removal before touching
           // the in-app queue — otherwise a failure here would leave the
           // video gone from CueBall but still sitting in the actual
           // playlist, with no way to tell from the UI.
-          if (found.item.youtubePlaylistItemId) {
-            const room = await prisma.room.findUnique({ where: { id: roomId } })
-            if (room?.youtubePlaylistId) {
-              try {
-                await removeVideoFromPlaylist(
-                  room,
-                  found.item.youtubePlaylistItemId,
-                )
-              } catch (err) {
-                console.error(
-                  `Failed to remove queue item from YouTube playlist for room ${roomId}`,
-                  err,
-                )
-                ack?.({
-                  error: `Couldn't remove that video from the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
-                })
-                return
-              }
+          if (found.item.youtubePlaylistItemId && room?.youtubePlaylistId) {
+            try {
+              await removeVideoFromPlaylist(
+                room,
+                found.item.youtubePlaylistItemId,
+              )
+            } catch (err) {
+              console.error(
+                `Failed to remove queue item from YouTube playlist for room ${roomId}`,
+                err,
+              )
+              ack?.({
+                error: `Couldn't remove that video from the YouTube playlist. ${describeYoutubePlaylistError(err)}`,
+              })
+              return
             }
           }
 
           await commitQueueItemRemoval({ queueItemId: found.item.id, roomId })
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
+
+          // The receiver's own live queue only ever grows via addVideo (see
+          // QueueAdd above) — removing here in the app doesn't remove it
+          // from the TV's queue by itself, so without this a "removed"
+          // video would still play when its turn comes on the TV. Not
+          // relevant for whatever's currently playing, since that's
+          // excluded from the removable set entirely (see QueueList's
+          // excludeQueueItemId).
+          if (room?.mode === RoomMode.CAST) {
+            try {
+              const lounge = await getLoungeSessionState(roomId)
+              if (lounge) {
+                const updated = await removeVideoFromLoungeQueue(
+                  lounge,
+                  found.item.youtubeVideoId,
+                )
+                await setLoungeSessionState(roomId, updated)
+              }
+            } catch (err) {
+              console.error(
+                `Failed to remove video from the live Cast session for room ${roomId}`,
+                err,
+              )
+              notifyPlaylistSyncFailed(
+                io,
+                roomId,
+                "Couldn't remove that video from the TV's live queue.",
+              )
+            }
+          }
         })()
       },
     )

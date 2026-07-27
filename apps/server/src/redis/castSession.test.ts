@@ -18,6 +18,7 @@ const sampleState: CastSessionState = {
   casterParticipantId: "participant-1",
   isPlaying: true,
   currentQueueItemId: "item-1",
+  restarting: false,
 }
 
 describe("castSession", () => {

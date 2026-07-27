@@ -322,6 +322,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             repeatEnabled={Boolean(room?.repeatEnabled)}
             onSetRepeat={handleSetRepeat}
             reordering={reordering}
+            repeating={Boolean(cast?.restarting)}
             excludeQueueItemId={
               room?.mode === CAST_MODE ? (cast?.currentQueueItemId ?? null) : null
             }
