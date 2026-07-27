@@ -15,9 +15,11 @@ import {
   addVideoToLoungeQueue,
   getLoungeNowPlaying,
   setLoungePlaylist,
+  type LoungeSessionState,
 } from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { withLoungeLock } from "./loungeLock.js"
+import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
 const POLL_INTERVAL_MS = 2000
@@ -124,9 +126,33 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
       await setCastState(roomId, { ...cast, restarting: true })
       await broadcastRoomState(io, roomId)
 
-      let session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+      let session: LoungeSessionState
+      try {
+        session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to start playback while restarting the live Cast queue for room ${roomId}`,
+          err,
+        )
+        await setCastState(roomId, { ...cast, restarting: false })
+        await broadcastRoomState(io, roomId)
+        notifyPlaylistSyncFailed(
+          io,
+          roomId,
+          "Couldn't resume the TV's queue. Try skipping or reconnecting.",
+        )
+        return
+      }
+
       for (const item of rest) {
-        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        try {
+          session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        } catch (err) {
+          console.error(
+            `Failed to add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while restarting`,
+            err,
+          )
+        }
       }
       await setLoungeSessionState(roomId, session)
       await setCastState(roomId, {
@@ -164,15 +190,6 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
 
 /** Starts the background poll loop; call once at server startup. */
 export function startCastLoungePolling(io: Server): void {
-  // A repeat-restart pushes a whole lap back onto the Lounge queue with one
-  // sequential rebind+POST round-trip per video, which can easily take
-  // longer than one poll interval. Without this guard, `setInterval` would
-  // start a second sweep on top of a still-running one, and the two would
-  // race on the same room's cast state and Lounge session — e.g. the second
-  // sweep re-reading `cast.currentQueueItemId` before the first has updated
-  // it, marking the same video played twice with a bogus later timestamp,
-  // corrupting its place in the next repeat lap. Skipping an overlapping
-  // tick instead just delays polling until the current sweep finishes.
   let sweeping = false
   setInterval(() => {
     if (sweeping) return

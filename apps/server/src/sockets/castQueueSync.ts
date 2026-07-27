@@ -71,14 +71,26 @@ async function syncCastQueueOrder(roomId: string): Promise<void> {
     )
     if (ordered.length === 0) return
 
-    // No reorder primitive in the Lounge protocol — drop and re-add
-    // everything in the new order, same as the drag-reorder handler.
     let session = lounge
     for (const item of ordered) {
-      session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
+      try {
+        session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to remove ${item.youtubeVideoId} from the live Cast queue for room ${roomId} while resyncing order`,
+          err,
+        )
+      }
     }
     for (const item of ordered) {
-      session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      try {
+        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to re-add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while resyncing order`,
+          err,
+        )
+      }
     }
     await setLoungeSessionState(roomId, session)
   })
