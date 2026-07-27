@@ -104,7 +104,7 @@ function describeCastErrorCode(code: string): string {
  * server a screenId to take over with.
  */
 export function useCastSender(): UseCastSenderResult {
-  const { socket, room, self } = useRoom()
+  const { socket, room, self, cast } = useRoom()
   // Destructured because useToast()'s returned object is a fresh reference
   // on every toast anywhere in the app (its provider re-renders when the
   // toast list changes) — the individual functions are stable, the wrapper
@@ -195,20 +195,29 @@ export function useCastSender(): UseCastSenderResult {
       handleConnectedChanged,
     )
 
-    // A page refresh always drops the old socket for real (the server has
-    // no way to tell "host reloaded" from "host left"), but the Cast SDK
-    // itself may have silently reattached to the still-live session via
-    // resumeSavedSession above — if so, re-announce it (and re-fetch the
-    // screenId) so the server's view of the room catches back up.
+    // The Cast SDK may have silently reattached to the still-live session
+    // here (e.g. after a page refresh, via resumeSavedSession above). The
+    // server already knows about that session too, since it's kept in
+    // Redis rather than tied to any one socket, so it doesn't need to hear
+    // about it again. Re-announcing would tell the server to bootstrap a
+    // brand new session, which reloads whatever's playing from the start,
+    // showing up as a random pause. Only announce if the room's own cast
+    // state says nothing's connected yet, e.g. the server really did lose
+    // it.
     if (player.isConnected) {
-      const session = context.getCurrentSession()
-      const name = session?.getCastDevice().friendlyName ?? "TV"
-      if (session) {
-        void fetchScreenId(session).then((screenId) =>
-          announceSessionStarted(name, screenId),
-        )
+      if (cast?.connected) {
+        setStatus("connected")
+        setDeviceName(cast.deviceName)
       } else {
-        announceSessionStarted(name, null)
+        const session = context.getCurrentSession()
+        const name = session?.getCastDevice().friendlyName ?? "TV"
+        if (session) {
+          void fetchScreenId(session).then((screenId) =>
+            announceSessionStarted(name, screenId),
+          )
+        } else {
+          announceSessionStarted(name, null)
+        }
       }
     }
 
