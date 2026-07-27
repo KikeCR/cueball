@@ -403,18 +403,39 @@ export function registerQueueHandlers(io: Server): void {
                   // prepared.items already excludes the currently-playing
                   // item (see excludeQueueItemId above), so this is exactly
                   // the receiver's "upcoming" queue.
+                  //
+                  // Best-effort per item, same reasoning as
+                  // castQueueSync.ts's vote-driven resync: a single failed
+                  // remove/add in this sequential chain of HTTP calls must
+                  // not abort the rest of the batch, or the receiver can be
+                  // left with some videos missing and others stuck in
+                  // their old position regardless of the new order.
                   let session = lounge
                   for (const item of prepared.items) {
-                    session = await removeVideoFromLoungeQueue(
-                      session,
-                      item.youtubeVideoId,
-                    )
+                    try {
+                      session = await removeVideoFromLoungeQueue(
+                        session,
+                        item.youtubeVideoId,
+                      )
+                    } catch (err) {
+                      console.error(
+                        `Failed to remove ${item.youtubeVideoId} from the live Cast queue for room ${roomId} while reordering`,
+                        err,
+                      )
+                    }
                   }
                   for (const item of prepared.items) {
-                    session = await addVideoToLoungeQueue(
-                      session,
-                      item.youtubeVideoId,
-                    )
+                    try {
+                      session = await addVideoToLoungeQueue(
+                        session,
+                        item.youtubeVideoId,
+                      )
+                    } catch (err) {
+                      console.error(
+                        `Failed to re-add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while reordering`,
+                        err,
+                      )
+                    }
                   }
                   await setLoungeSessionState(roomId, session)
                 }

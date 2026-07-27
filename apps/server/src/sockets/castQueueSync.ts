@@ -73,12 +73,37 @@ async function syncCastQueueOrder(roomId: string): Promise<void> {
 
     // No reorder primitive in the Lounge protocol — drop and re-add
     // everything in the new order, same as the drag-reorder handler.
+    //
+    // Each call is its own sequential rebind+POST round-trip against an
+    // undocumented, occasionally-flaky API, so a single transient failure
+    // partway through either loop must not abort the rest of the batch —
+    // that's exactly how a higher-voted video can end up removed but never
+    // re-added (or never removed at all) while a lower-ranked one stays
+    // put and ends up "next" on the receiver by default, regardless of
+    // what the in-app queue says. Best-effort per item instead: keep going
+    // so the final state ends up as close to correct as possible, and log
+    // whatever didn't make it rather than losing the whole resync to one
+    // bad request.
     let session = lounge
     for (const item of ordered) {
-      session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
+      try {
+        session = await removeVideoFromLoungeQueue(session, item.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to remove ${item.youtubeVideoId} from the live Cast queue for room ${roomId} while resyncing order`,
+          err,
+        )
+      }
     }
     for (const item of ordered) {
-      session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      try {
+        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to re-add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while resyncing order`,
+          err,
+        )
+      }
     }
     await setLoungeSessionState(roomId, session)
   })

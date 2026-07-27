@@ -15,9 +15,11 @@ import {
   addVideoToLoungeQueue,
   getLoungeNowPlaying,
   setLoungePlaylist,
+  type LoungeSessionState,
 } from "../services/youtubeLounge.js"
 import { broadcastRoomState } from "./broadcast.js"
 import { withLoungeLock } from "./loungeLock.js"
+import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
 const POLL_INTERVAL_MS = 2000
@@ -124,9 +126,39 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
       await setCastState(roomId, { ...cast, restarting: true })
       await broadcastRoomState(io, roomId)
 
-      let session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+      let session: LoungeSessionState
+      try {
+        session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to start playback while restarting the live Cast queue for room ${roomId}`,
+          err,
+        )
+        await setCastState(roomId, { ...cast, restarting: false })
+        await broadcastRoomState(io, roomId)
+        notifyPlaylistSyncFailed(
+          io,
+          roomId,
+          "Couldn't resume the TV's queue. Try skipping or reconnecting.",
+        )
+        return
+      }
+      // Best-effort per item: a single failed addVideo partway through
+      // this sequential chain must not abort the rest of the batch (some
+      // videos would silently never make it onto the receiver) or, worse,
+      // throw out of this whole branch before the state updates below run
+      // — upNext already started playing via setLoungePlaylist above, so
+      // losing that update would leave cast.restarting stuck true and
+      // currentQueueItemId never pointing at what's actually now playing.
       for (const item of rest) {
-        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        try {
+          session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+        } catch (err) {
+          console.error(
+            `Failed to add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while restarting`,
+            err,
+          )
+        }
       }
       await setLoungeSessionState(roomId, session)
       await setCastState(roomId, {
