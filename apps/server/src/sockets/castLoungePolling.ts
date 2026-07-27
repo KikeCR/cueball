@@ -20,7 +20,7 @@ import { broadcastRoomState } from "./broadcast.js"
 import { withLoungeLock } from "./loungeLock.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
-const POLL_INTERVAL_MS = 4000
+const POLL_INTERVAL_MS = 2000
 const LOUNGE_KEY_PATTERN = "room:*:lounge"
 
 function roomIdFromLoungeKey(key: string): string | null {
@@ -38,11 +38,6 @@ function roomIdFromLoungeKey(key: string): string | null {
  * happened because a video simply finished or because someone hit skip.
  */
 async function pollRoom(io: Server, roomId: string): Promise<void> {
-  // The whole reconcile-and-possibly-mutate cycle runs under the lock, not
-  // just the writes at the end — this is exactly the flow a vote-driven
-  // resync (castQueueSync.ts) or a fresh add's immediate push (queue.ts)
-  // can otherwise land in the middle of, e.g. right as a video finishes and
-  // this is deciding what's playing next.
   await withLoungeLock(roomId, () => reconcileRoom(io, roomId))
 }
 
@@ -102,11 +97,24 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
 
   if (nowPlaying.videoId === null) {
     // The receiver stopped on its own with nothing left in its live queue
-    // to auto-advance into — it won't start playing again by itself, even
-    // once repeat has reset the history back to unplayed in our DB. Push
-    // the restarted lap onto the Lounge queue ourselves, the same way
-    // bootstrapCastSession does when a Cast session first connects.
-    const [upNext, ...rest] = restarted
+    // to auto-advance into — it won't start playing again by itself. That
+    // can mean the whole DB queue is genuinely empty (repeat may have just
+    // refilled it, handled below), but it can just as easily mean there
+    // ARE unplayed videos sitting in our queue that never actually made it
+    // onto the receiver's own live queue in the first place — e.g. a vote
+    // reorder or a fresh add whose push to the Lounge session silently
+    // failed or hadn't landed yet. Falling back to whatever's still
+    // unplayed (repeat's restarted lap taking priority when there is one)
+    // means the receiver stopping is always treated as "figure out what
+    // should play next," not just "was this a repeat restart" — otherwise
+    // perfectly good, already-voted-for videos are left stranded with
+    // nothing ever pushing them to the TV.
+    const refreshedForFallback = await getRoomState(roomId)
+    const stillUnplayed =
+      refreshedForFallback?.queue.filter((item) => !item.playedAt) ?? []
+    const upcoming = restarted.length > 0 ? restarted : stillUnplayed
+
+    const [upNext, ...rest] = upcoming
     if (upNext) {
       // Pushing a whole lap back one video at a time is a handful of
       // sequential network round-trips to YouTube — long enough that the

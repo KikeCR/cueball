@@ -14,7 +14,7 @@ import {
 import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 
-const DEBOUNCE_MS = 4000
+const DEBOUNCE_MS = 1500
 const timers = new Map<string, NodeJS.Timeout>()
 
 /**
