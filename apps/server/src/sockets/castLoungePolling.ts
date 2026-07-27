@@ -143,13 +143,7 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
         )
         return
       }
-      // Best-effort per item: a single failed addVideo partway through
-      // this sequential chain must not abort the rest of the batch (some
-      // videos would silently never make it onto the receiver) or, worse,
-      // throw out of this whole branch before the state updates below run
-      // — upNext already started playing via setLoungePlaylist above, so
-      // losing that update would leave cast.restarting stuck true and
-      // currentQueueItemId never pointing at what's actually now playing.
+
       for (const item of rest) {
         try {
           session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
@@ -196,15 +190,6 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
 
 /** Starts the background poll loop; call once at server startup. */
 export function startCastLoungePolling(io: Server): void {
-  // A repeat-restart pushes a whole lap back onto the Lounge queue with one
-  // sequential rebind+POST round-trip per video, which can easily take
-  // longer than one poll interval. Without this guard, `setInterval` would
-  // start a second sweep on top of a still-running one, and the two would
-  // race on the same room's cast state and Lounge session — e.g. the second
-  // sweep re-reading `cast.currentQueueItemId` before the first has updated
-  // it, marking the same video played twice with a bogus later timestamp,
-  // corrupting its place in the next repeat lap. Skipping an overlapping
-  // tick instead just delays polling until the current sweep finishes.
   let sweeping = false
   setInterval(() => {
     if (sweeping) return
