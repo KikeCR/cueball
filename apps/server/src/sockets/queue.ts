@@ -29,14 +29,16 @@ import {
 } from "../services/queueService.js"
 import { getRoomState, roomAllowsLongVideos } from "../services/roomService.js"
 import {
-  buildRelatedVideosQuery,
   fetchVideoDurationSeconds,
   fetchVideoMetadata,
   fetchVideoTagInfo,
   formatDurationClock,
+  groupVideosByTagCluster,
   isYoutubeDataApiConfigured,
   parseYoutubeVideoId,
   searchYoutubeVideos,
+  YoutubeQuotaExceededError,
+  type YoutubeSearchResult,
 } from "../services/youtube.js"
 import {
   getCachedSearchResults,
@@ -260,24 +262,40 @@ export function registerQueueHandlers(io: Server): void {
 
         try {
           const tagInfo = await fetchVideoTagInfo(seedVideoIds)
-          const query = buildRelatedVideosQuery(tagInfo)
-          if (!query) {
-            ack?.({ results: [] } satisfies QueueRelatedResult)
-            return
-          }
-
-          let results = await getCachedSearchResults(query)
-          if (!results) {
-            results = await searchYoutubeVideos(query)
-            await setCachedSearchResults(query, results)
-          }
+          // A mixed-taste queue (city pop and indie rock, say) rarely has
+          // anything in common across the whole thing — grouping by shared
+          // tags first and searching each group separately means a mixed
+          // queue still gets results targeted at each of its distinct
+          // clusters, instead of one blended query that matches nothing.
+          const groups = groupVideosByTagCluster(tagInfo)
 
           const alreadyQueued = new Set(seedVideoIds)
-          ack?.({
-            results: results.filter(
-              (result) => !alreadyQueued.has(result.videoId),
-            ),
-          } satisfies QueueRelatedResult)
+          const merged = new Map<string, YoutubeSearchResult>()
+          for (const { query } of groups) {
+            let results = await getCachedSearchResults(query)
+            if (!results) {
+              try {
+                results = await searchYoutubeVideos(query)
+                await setCachedSearchResults(query, results)
+              } catch (err) {
+                console.error(
+                  `Failed to fetch a related-videos group for room ${roomId}`,
+                  err,
+                )
+                // A quota rejection here means every remaining group would
+                // fail the same way — no point burning more failed calls.
+                // Any other error might just be that one group's problem.
+                if (err instanceof YoutubeQuotaExceededError) break
+                continue
+              }
+            }
+            for (const result of results) {
+              if (alreadyQueued.has(result.videoId)) continue
+              merged.set(result.videoId, result)
+            }
+          }
+
+          ack?.({ results: [...merged.values()] } satisfies QueueRelatedResult)
         } catch (err) {
           console.error(
             `Failed to fetch related videos for room ${roomId}`,

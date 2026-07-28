@@ -261,10 +261,11 @@ const RELATED_QUERY_STOPWORDS = new Set([
 ])
 
 /**
- * Builds a single search query representing a whole set of videos (a room's
- * queue plus its played history), rather than any one of them individually —
- * so "related" reflects the room's overall taste, not just whatever's
- * currently playing. Pure and easy to test without mocking network calls.
+ * Builds a single search query representing a set of videos, rather than any
+ * one of them individually — used both for a whole cluster of related videos
+ * (see groupVideosByTagCluster) and, as a fallback, for videos that don't
+ * cluster with anything else. Pure and easy to test without mocking network
+ * calls.
  *
  * Prefers each video's own uploader-set tags (most videos that have any tend
  * to share several across a genre/artist), aggregated by frequency across
@@ -302,4 +303,76 @@ export function buildRelatedVideosQuery(videos: VideoTagInfo[]): string {
     .map(([word]) => word)
 
   return [...topTags, ...topWords].join(" ")
+}
+
+/** Each entry is a search.list-ready query representing one tag-cluster (or the catch-all remainder) — see groupVideosByTagCluster. */
+export interface RelatedVideoQueryGroup {
+  query: string
+}
+
+const MAX_RELATED_QUERY_GROUPS = 3
+
+/**
+ * A room's queue is often a mix of genres/artists, not one coherent taste —
+ * blending every video's tags into a single query (the old behavior)
+ * regularly washed out into something incoherent that matched nothing (e.g.
+ * a queue mixing city pop and indie rock). This groups videos that actually
+ * share a tag with each other first, and builds one query per group, so a
+ * mixed queue gets back a query targeted at each of its distinct clusters
+ * instead of one query targeted at none of them.
+ *
+ * Greedy, not a proper clustering algorithm: repeatedly finds whichever tag
+ * currently covers the most still-ungrouped videos, claims every video that
+ * has it, and repeats — capped at MAX_RELATED_QUERY_GROUPS groups (each one
+ * costs a separate 100-unit search.list call, so this bounds quota spend per
+ * refresh click). Only tags shared by at least 2 videos count, since a tag
+ * only one video has doesn't define a group. Whatever's left ungrouped after
+ * that (including everything, if nothing shared any tag at all) becomes one
+ * final catch-all group, using the same tag/title fallback
+ * buildRelatedVideosQuery already does for a single video.
+ */
+export function groupVideosByTagCluster(
+  videos: VideoTagInfo[],
+): RelatedVideoQueryGroup[] {
+  const remaining = new Map(videos.map((video) => [video.videoId, video]))
+  const groups: RelatedVideoQueryGroup[] = []
+
+  while (groups.length < MAX_RELATED_QUERY_GROUPS && remaining.size > 0) {
+    const pool = [...remaining.values()]
+
+    const tagVideoIds = new Map<string, Set<string>>()
+    for (const video of pool) {
+      for (const rawTag of video.tags) {
+        const tag = rawTag.trim().toLowerCase()
+        if (!tag) continue
+        const ids = tagVideoIds.get(tag) ?? new Set<string>()
+        ids.add(video.videoId)
+        tagVideoIds.set(tag, ids)
+      }
+    }
+
+    let bestTag: string | null = null
+    let bestIds: Set<string> | null = null
+    for (const [tag, ids] of tagVideoIds) {
+      if (ids.size < 2) continue
+      if (!bestIds || ids.size > bestIds.size) {
+        bestTag = tag
+        bestIds = ids
+      }
+    }
+    if (!bestTag || !bestIds) break
+
+    const clusterVideos = pool.filter((video) => bestIds!.has(video.videoId))
+    for (const video of clusterVideos) remaining.delete(video.videoId)
+
+    const query = buildRelatedVideosQuery(clusterVideos)
+    if (query) groups.push({ query })
+  }
+
+  if (groups.length < MAX_RELATED_QUERY_GROUPS && remaining.size > 0) {
+    const query = buildRelatedVideosQuery([...remaining.values()])
+    if (query) groups.push({ query })
+  }
+
+  return groups
 }
