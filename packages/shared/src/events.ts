@@ -17,6 +17,7 @@ export const SocketEvents = {
   ParticipantRemove: "participant:remove",
   ParticipantRemoved: "participant:removed",
   ParticipantRename: "participant:rename",
+  ParticipantPromote: "participant:promote",
 
   QueueAdd: "queue:add",
   QueueVote: "queue:vote",
@@ -89,6 +90,10 @@ export interface ParticipantRemovedPayload {
 
 export interface ParticipantRenamePayload {
   name: string
+}
+
+export interface ParticipantPromotePayload {
+  participantId: string
 }
 
 export interface QueueAddPayload {
@@ -174,6 +179,10 @@ export interface AuthResponse {
 
 export interface RoomHistoryResponse {
   rooms: RoomHistoryEntry[]
+}
+
+export interface UpdateUserSettingsRequest {
+  allowLongVideos: boolean
 }
 
 export interface YoutubeSearchResponse {

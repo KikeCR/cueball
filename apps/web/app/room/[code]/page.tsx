@@ -56,6 +56,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
     clearHistory,
     setRepeat,
     removeParticipant,
+    promoteParticipant,
     renameSelf,
     renameRoom,
   } = useRoom()
@@ -170,6 +171,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
     removeParticipant(participantId)
       .then(() => toast.success("Participant removed"))
       .catch(reportActionError("Failed to remove participant"))
+  }
+
+  const handlePromoteParticipant = (participantId: string) => {
+    promoteParticipant(participantId)
+      .then(() => toast.success("Now a host"))
+      .catch(reportActionError("Failed to promote participant"))
   }
 
   const handleRename = (name: string) => {
@@ -345,6 +352,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
             isSelfHost={self.isHost}
             onRemove={handleRemoveParticipant}
             onRename={handleRename}
+            onPromote={handlePromoteParticipant}
           />
         </Card>
 

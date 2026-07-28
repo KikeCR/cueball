@@ -15,6 +15,9 @@ vi.mock("./prisma.js", () => ({
       create: vi.fn(),
       update: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }))
@@ -31,8 +34,10 @@ import {
   findDeletableRoom,
   getUserRoomHistory,
   orderQueueForRoom,
+  promoteParticipant,
   removeParticipant,
   renameParticipant,
+  roomAllowsLongVideos,
   setRoomName,
   setRoomRepeat,
   sortQueueItems,
@@ -423,6 +428,109 @@ describe("removeParticipant", () => {
   })
 })
 
+describe("promoteParticipant", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.participant.findUnique).mockReset()
+    vi.mocked(prisma.participant.findFirst).mockReset()
+    vi.mocked(prisma.participant.update).mockReset()
+    vi.mocked(prisma.room.update).mockReset()
+  })
+
+  it("rejects a requester who isn't the host", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "requester-1",
+      roomId: "room-1",
+      isHost: false,
+    } as never)
+
+    const result = await promoteParticipant({
+      roomId: "room-1",
+      requesterId: "requester-1",
+      targetId: "target-1",
+    })
+
+    expect(result).toEqual({ error: "Only the host can promote participants" })
+    expect(prisma.participant.update).not.toHaveBeenCalled()
+  })
+
+  it("rejects a requester from a different room, even if they're a host there", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "requester-1",
+      roomId: "other-room",
+      isHost: true,
+    } as never)
+
+    const result = await promoteParticipant({
+      roomId: "room-1",
+      requesterId: "requester-1",
+      targetId: "target-1",
+    })
+
+    expect(result).toEqual({ error: "Only the host can promote participants" })
+  })
+
+  it("rejects promoting a participant who isn't in this room", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+    vi.mocked(prisma.participant.findFirst).mockResolvedValue(null)
+
+    const result = await promoteParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "missing",
+    })
+
+    expect(result).toEqual({ error: "Participant not found in this room" })
+  })
+
+  it("lets a host promote another participant to host", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+    const target = { id: "target-1", roomId: "room-1", isHost: false }
+    vi.mocked(prisma.participant.findFirst).mockResolvedValue(target as never)
+    const promoted = { ...target, isHost: true }
+    vi.mocked(prisma.participant.update).mockResolvedValue(promoted as never)
+    vi.mocked(prisma.room.update).mockResolvedValue({} as never)
+
+    const result = await promoteParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "target-1",
+    })
+
+    expect(prisma.participant.update).toHaveBeenCalledWith({
+      where: { id: "target-1" },
+      data: { isHost: true },
+    })
+    expect(result).toEqual({ promoted })
+  })
+
+  it("is a no-op when the target is already a host", async () => {
+    vi.mocked(prisma.participant.findUnique).mockResolvedValue({
+      id: "host-1",
+      roomId: "room-1",
+      isHost: true,
+    } as never)
+    const target = { id: "target-1", roomId: "room-1", isHost: true }
+    vi.mocked(prisma.participant.findFirst).mockResolvedValue(target as never)
+
+    const result = await promoteParticipant({
+      roomId: "room-1",
+      requesterId: "host-1",
+      targetId: "target-1",
+    })
+
+    expect(prisma.participant.update).not.toHaveBeenCalled()
+    expect(result).toEqual({ promoted: target })
+  })
+})
+
 describe("findDeletableRoom", () => {
   beforeEach(() => {
     vi.mocked(prisma.room.findUnique).mockReset()
@@ -580,5 +688,42 @@ describe("setRoomName", () => {
       where: { id: "room-1" },
       data: { name: null },
     })
+  })
+})
+
+describe("roomAllowsLongVideos", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.user.findUnique).mockReset()
+  })
+
+  it("returns false when the room has no original host (guest-created)", async () => {
+    expect(await roomAllowsLongVideos(null)).toBe(false)
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+  })
+
+  it("returns the host's own preference", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      allowLongVideos: true,
+    } as never)
+
+    expect(await roomAllowsLongVideos("user-1")).toBe(true)
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      select: { allowLongVideos: true },
+    })
+  })
+
+  it("returns false when the host's own preference is off", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      allowLongVideos: false,
+    } as never)
+
+    expect(await roomAllowsLongVideos("user-1")).toBe(false)
+  })
+
+  it("returns false if the host account no longer exists", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+
+    expect(await roomAllowsLongVideos("deleted-user")).toBe(false)
   })
 })

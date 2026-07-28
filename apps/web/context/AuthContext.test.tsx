@@ -13,12 +13,14 @@ const USER = {
   email: "sam@example.com",
   displayName: "Sam",
   createdAt: new Date().toISOString(),
+  allowLongVideos: false,
 }
 
 describe("AuthContext", () => {
   beforeEach(() => {
     vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.patch).mockReset()
     localStorage.clear()
   })
 
@@ -88,6 +90,27 @@ describe("AuthContext", () => {
     )
     expect(auth.userText).toBe("none")
     expect(localStorage.getItem("cueball:auth")).toBeNull()
+  })
+
+  it("updates settings and reflects the returned user", async () => {
+    vi.mocked(api.post).mockResolvedValue({ user: USER, token: "new-token" })
+    vi.mocked(api.patch).mockResolvedValue({
+      user: { ...USER, allowLongVideos: true },
+    })
+
+    const auth = new AuthContextPageObject()
+    await waitFor(() => expect(auth.loadingText).toBe("false"))
+    await auth.login()
+    await waitFor(() => expect(auth.userText).toBe("Sam"))
+
+    await auth.enableLongVideos()
+
+    await waitFor(() => expect(auth.allowLongVideosText).toBe("true"))
+    expect(api.patch).toHaveBeenCalledWith(
+      "/api/auth/me",
+      { allowLongVideos: true },
+      "new-token",
+    )
   })
 
   it("logs out and clears the stored token", async () => {

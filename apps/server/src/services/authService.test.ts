@@ -25,6 +25,7 @@ import {
   getUserById,
   loginUser,
   registerUser,
+  updateUserAllowLongVideos,
 } from "./authService.js"
 
 const EXISTING_USER = {
@@ -144,6 +145,23 @@ describe("findOrCreateGoogleUser", () => {
     expect(prisma.user.create).toHaveBeenCalledWith({
       data: { email: "new@example.com", displayName: "New Person" },
     })
+  })
+})
+
+describe("updateUserAllowLongVideos", () => {
+  it("updates the flag for the given user", async () => {
+    vi.mocked(prisma.user.update).mockResolvedValue({
+      ...EXISTING_USER,
+      allowLongVideos: true,
+    } as never)
+
+    const user = await updateUserAllowLongVideos("user-1", true)
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { allowLongVideos: true },
+    })
+    expect(user.allowLongVideos).toBe(true)
   })
 })
 

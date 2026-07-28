@@ -78,6 +78,36 @@ describe("ParticipantList", () => {
     expect(onRemove).toHaveBeenCalledWith("guest-1")
   })
 
+  it("hides promote buttons from a non-host", () => {
+    const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "guest-1",
+      isSelfHost: false,
+      onPromote: vi.fn(),
+    })
+
+    expect(list.promoteButton("Riley")).not.toBeInTheDocument()
+  })
+
+  it("lets a host promote another participant, but not an existing host", async () => {
+    const onPromote = vi.fn()
+    const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
+    const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })
+    const list = new ParticipantListPageObject({
+      participants: [host, guest],
+      selfId: "host-1",
+      isSelfHost: true,
+      onPromote,
+    })
+
+    expect(list.promoteButton("Sam")).not.toBeInTheDocument()
+    await list.clickPromote("Riley")
+
+    expect(onPromote).toHaveBeenCalledWith("guest-1")
+  })
+
   it("only shows the edit-name control for yourself", () => {
     const host = makeParticipant({ id: "host-1", guestName: "Sam", isHost: true })
     const guest = makeParticipant({ id: "guest-1", guestName: "Riley" })

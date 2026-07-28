@@ -26,6 +26,7 @@ import {
   isVideoAlreadyQueued,
   prepareQueueReorder,
 } from "../services/queueService.js"
+import { roomAllowsLongVideos } from "../services/roomService.js"
 import {
   fetchVideoDurationSeconds,
   fetchVideoMetadata,
@@ -103,15 +104,19 @@ export function registerQueueHandlers(io: Server): void {
           return
         }
 
-        const durationSeconds = await fetchVideoDurationSeconds(videoId)
-        if (
-          durationSeconds !== null &&
-          durationSeconds > MAX_VIDEO_DURATION_SECONDS
-        ) {
-          ack?.({
-            error: `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter (this one is ${formatDurationClock(durationSeconds)})`,
-          })
-          return
+        // Skips the length lookup entirely when it wouldn't matter anyway —
+        // saves a YouTube Data API quota call, not just the check itself.
+        if (!(await roomAllowsLongVideos(room.hostUserId))) {
+          const durationSeconds = await fetchVideoDurationSeconds(videoId)
+          if (
+            durationSeconds !== null &&
+            durationSeconds > MAX_VIDEO_DURATION_SECONDS
+          ) {
+            ack?.({
+              error: `Videos must be ${MAX_VIDEO_DURATION_SECONDS / 60} minutes or shorter (this one is ${formatDurationClock(durationSeconds)})`,
+            })
+            return
+          }
         }
 
         const queueItem = await addQueueItem({

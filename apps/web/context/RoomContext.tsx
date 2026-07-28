@@ -80,6 +80,7 @@ interface RoomContextValue {
   clearHistory: () => Promise<void>
   setRepeat: (enabled: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
+  promoteParticipant: (participantId: string) => Promise<void>
   renameSelf: (name: string) => Promise<void>
   renameRoom: (name: string) => Promise<void>
   sendCastCommand: (action: CastCommandAction, seekSeconds?: number) => Promise<void>
@@ -297,6 +298,14 @@ export function RoomProvider({
     [],
   )
 
+  const promoteParticipant = useCallback(
+    (participantId: string) =>
+      emitAction(socketRef.current, SocketEvents.ParticipantPromote, {
+        participantId,
+      }),
+    [],
+  )
+
   const renameSelf = useCallback(
     (name: string) =>
       emitAction(socketRef.current, SocketEvents.ParticipantRename, { name }),
@@ -343,6 +352,7 @@ export function RoomProvider({
         clearHistory,
         setRepeat,
         removeParticipant,
+        promoteParticipant,
         renameSelf,
         renameRoom,
         sendCastCommand,
