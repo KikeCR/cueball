@@ -25,6 +25,10 @@ export class AddVideoFormPageObject {
     return screen.queryByRole("button", { name: /clear search/i })
   }
 
+  get searchUnavailableAlert() {
+    return screen.queryByRole("alert")
+  }
+
   async fillLink(value: string) {
     await this.user.type(this.linkInput, value)
   }

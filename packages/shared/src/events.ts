@@ -26,6 +26,7 @@ export const SocketEvents = {
   QueueSetPlayed: "queue:set-played",
   QueueClear: "queue:clear",
   QueueClearHistory: "queue:clear-history",
+  QueueRelated: "queue:related",
   RoomSetRepeat: "room:set-repeat",
   RoomRename: "room:rename",
 
@@ -124,6 +125,11 @@ export interface QueueClearResult {
   totalCount: number
 }
 
+/** Requested manually (a refresh button), not on every queue change — search.list is quota-expensive. */
+export interface QueueRelatedResult {
+  results: YoutubeSearchResult[]
+}
+
 export interface RoomSetRepeatPayload {
   enabled: boolean
 }
@@ -181,8 +187,10 @@ export interface RoomHistoryResponse {
   rooms: RoomHistoryEntry[]
 }
 
+/** Every field is optional — a partial update, only the fields present are changed. */
 export interface UpdateUserSettingsRequest {
-  allowLongVideos: boolean
+  allowLongVideos?: boolean
+  relatedVideosBetaEnabled?: boolean
 }
 
 export interface YoutubeSearchResponse {
@@ -192,4 +200,6 @@ export interface YoutubeSearchResponse {
 export interface ConfigResponse {
   /** Rooms with no activity for this many hours, and nobody connected, get deleted automatically. */
   roomExpiryHours: number
+  /** False once today's YouTube API quota usage crosses the related-videos safety threshold — the beta section hides itself rather than risk starving search of quota. */
+  youtubeQuotaHealthy: boolean
 }

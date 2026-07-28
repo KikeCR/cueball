@@ -76,6 +76,14 @@ export default function AccountPage() {
     )
   }
 
+  const handleToggleRelatedVideosBeta = (relatedVideosBetaEnabled: boolean) => {
+    updateSettings({ relatedVideosBetaEnabled }).catch((err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update setting",
+      ),
+    )
+  }
+
   const callbackHandler = (
     <Suspense fallback={null}>
       <GoogleCallbackHandler onExchangingChange={setExchangingToken} />
@@ -172,6 +180,24 @@ export default function AccountPage() {
               checked={user.allowLongVideos}
               onChange={handleToggleAllowLongVideos}
               label="Allow long videos"
+            />
+          </div>
+        </Card>
+
+        <Card className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Related videos (beta)</h2>
+              <p className="text-xs text-muted">
+                Shows a section under the queue suggesting videos related to
+                what's been added, with one click to add them. The feature
+                might have limited use due to restrictions.
+              </p>
+            </div>
+            <Switch
+              checked={user.relatedVideosBetaEnabled}
+              onChange={handleToggleRelatedVideosBeta}
+              label="Related videos (beta)"
             />
           </div>
         </Card>

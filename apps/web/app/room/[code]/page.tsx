@@ -27,6 +27,7 @@ import { JoinRoomForm } from "../../../components/JoinRoomForm"
 import { ParticipantList } from "../../../components/ParticipantList"
 import { AddVideoForm } from "../../../components/AddVideoForm"
 import { QueueList } from "../../../components/QueueList"
+import { RelatedVideosSection } from "../../../components/RelatedVideosSection"
 import { ConnectYoutubeButton } from "../../../components/ConnectYoutubeButton"
 import { PlaylistShare } from "../../../components/PlaylistShare"
 import { CastControlsCard } from "../../../components/CastControlsCard"
@@ -67,6 +68,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
   const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false)
   const [reordering, setReordering] = useState(false)
   const [roomExpiryHours, setRoomExpiryHours] = useState<number | null>(null)
+  const [youtubeQuotaHealthy, setYoutubeQuotaHealthy] = useState(false)
   const [editingRoomName, setEditingRoomName] = useState<string | null>(null)
 
   useEffect(() => {
@@ -83,7 +85,10 @@ function RoomView({ roomCode }: { roomCode: string }) {
     // the room itself or surface an error toast.
     api
       .get<ConfigResponse>("/api/config")
-      .then((data) => setRoomExpiryHours(data.roomExpiryHours))
+      .then((data) => {
+        setRoomExpiryHours(data.roomExpiryHours)
+        setYoutubeQuotaHealthy(data.youtubeQuotaHealthy)
+      })
       .catch(() => {})
   }, [])
 
@@ -410,6 +415,12 @@ function RoomView({ roomCode }: { roomCode: string }) {
             }
           />
         </Card>
+
+        {room?.relatedVideosEnabled && youtubeQuotaHealthy && (
+          <Card>
+            <RelatedVideosSection />
+          </Card>
+        )}
       </div>
 
       <ConfirmDialog

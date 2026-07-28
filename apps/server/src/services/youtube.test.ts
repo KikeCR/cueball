@@ -1,14 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("../redis/youtubeQuota.js", () => ({
+  recordYoutubeQuotaUsage: vi.fn(),
+}))
+
+import { recordYoutubeQuotaUsage } from "../redis/youtubeQuota.js"
 import {
+  buildRelatedVideosQuery,
   decodeHtmlEntities,
   fetchVideoDurationSeconds,
   fetchVideoMetadata,
+  fetchVideoTagInfo,
   formatDurationClock,
   isYoutubeDataApiConfigured,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
   searchYoutubeVideos,
+  YoutubeQuotaExceededError,
+  type VideoTagInfo,
 } from "./youtube.js"
+
+afterEach(() => {
+  vi.mocked(recordYoutubeQuotaUsage).mockClear()
+})
 
 describe("parseYoutubeVideoId", () => {
   it.each([
@@ -191,6 +205,38 @@ describe("searchYoutubeVideos", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it("records quota usage for a successful call", async () => {
+    vi.mocked(recordYoutubeQuotaUsage).mockReset()
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) }),
+    )
+
+    await searchYoutubeVideos("rick astley")
+
+    expect(recordYoutubeQuotaUsage).toHaveBeenCalledWith(100)
+  })
+
+  it("throws a distinguishable error when the daily quota is exceeded", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: () =>
+          Promise.resolve({
+            error: { errors: [{ reason: "quotaExceeded" }] },
+          }),
+      }),
+    )
+
+    await expect(searchYoutubeVideos("rick astley")).rejects.toBeInstanceOf(
+      YoutubeQuotaExceededError,
+    )
+  })
+
   it("maps search results, preferring the medium thumbnail", async () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key")
     const fetchMock = vi.fn().mockResolvedValue({
@@ -317,5 +363,115 @@ describe("searchYoutubeVideos", () => {
     await expect(searchYoutubeVideos("query")).rejects.toThrow(
       "YouTube search failed with status 403",
     )
+  })
+})
+
+describe("fetchVideoTagInfo", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it("returns an empty list and skips the request when unconfigured", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "")
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    expect(await fetchVideoTagInfo(["abc"])).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("returns an empty list and skips the request when there are no video ids", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    expect(await fetchVideoTagInfo([])).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("batches every id into a single call", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            { id: "abc", snippet: { title: "Song A", tags: ["indie", "rock"] } },
+            { id: "def", snippet: { title: "Song B" } },
+          ],
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await fetchVideoTagInfo(["abc", "def"])
+
+    expect(result).toEqual([
+      { videoId: "abc", title: "Song A", tags: ["indie", "rock"] },
+      { videoId: "def", title: "Song B", tags: [] },
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://www.googleapis.com/youtube/v3/videos?part=snippet&id=abc%2Cdef&key=test-key",
+      ),
+    )
+  })
+
+  it("returns an empty list when the request fails", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+
+    expect(await fetchVideoTagInfo(["abc"])).toEqual([])
+  })
+})
+
+describe("buildRelatedVideosQuery", () => {
+  function video(overrides: Partial<VideoTagInfo> = {}): VideoTagInfo {
+    return { videoId: "abc", title: "Some Video", tags: [], ...overrides }
+  }
+
+  it("returns an empty string for no videos", () => {
+    expect(buildRelatedVideosQuery([])).toBe("")
+  })
+
+  it("prefers the most frequent tags across every video, not just one", () => {
+    const videos = [
+      video({ tags: ["indie rock", "lofi"] }),
+      video({ tags: ["indie rock", "chill"] }),
+      video({ tags: ["indie rock"] }),
+    ]
+
+    expect(buildRelatedVideosQuery(videos)).toBe("indie rock lofi chill")
+  })
+
+  it("caps at the top 5 tags", () => {
+    const videos = [
+      video({ tags: ["a", "a", "b", "b", "c", "c", "d", "d", "e", "e", "f", "f"] }),
+    ]
+
+    expect(buildRelatedVideosQuery(videos).split(" ")).toHaveLength(5)
+  })
+
+  it("falls back to title words when fewer than 2 distinct tags exist", () => {
+    const videos = [
+      video({ title: "Amazing Official Lyrics Video", tags: [] }),
+      video({ title: "Amazing Live Performance", tags: ["amazing"] }),
+    ]
+
+    const query = buildRelatedVideosQuery(videos)
+    // "amazing" is the sole tag, plus title words with stopwords/generic
+    // terms (official, lyrics, video) filtered out.
+    expect(query).toContain("amazing")
+    expect(query).toContain("live")
+    expect(query).toContain("performance")
+    expect(query).not.toContain("official")
+    expect(query).not.toContain("video")
+  })
+
+  it("ignores short and stopword title words in the fallback", () => {
+    const videos = [video({ title: "In the of a to HD 4K" })]
+
+    expect(buildRelatedVideosQuery(videos)).toBe("")
   })
 })

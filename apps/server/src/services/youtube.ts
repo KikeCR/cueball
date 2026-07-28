@@ -1,4 +1,30 @@
+import { recordYoutubeQuotaUsage } from "../redis/youtubeQuota.js"
+
 const VIDEO_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/
+
+const QUOTA_COST_VIDEOS_LIST = 1
+const QUOTA_COST_SEARCH_LIST = 100
+
+export class YoutubeQuotaExceededError extends Error {
+  constructor() {
+    super(
+      "YouTube's daily API limit has been reached. This resets automatically — try again later.",
+    )
+    this.name = "YoutubeQuotaExceededError"
+  }
+}
+
+/** Best-effort: a body that isn't JSON, or doesn't have the expected shape, just means "unknown reason" rather than a hard failure. */
+async function getYoutubeErrorReason(res: Response): Promise<string | null> {
+  try {
+    const body = (await res.json()) as {
+      error?: { errors?: Array<{ reason?: string }> }
+    }
+    return body.error?.errors?.[0]?.reason ?? null
+  } catch {
+    return null
+  }
+}
 
 export function parseYoutubeVideoId(url: string): string | null {
   let parsed: URL
@@ -93,6 +119,7 @@ export async function fetchVideoDurationSeconds(
 
   const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(videoId)}&key=${apiKey}`
   const res = await fetch(url)
+  await recordYoutubeQuotaUsage(QUOTA_COST_VIDEOS_LIST)
   if (!res.ok) return null
 
   const body = (await res.json()) as VideosListResponse
@@ -167,7 +194,12 @@ export async function searchYoutubeVideos(
 
   const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=${encodeURIComponent(query)}&key=${apiKey}`
   const res = await fetch(url)
+  await recordYoutubeQuotaUsage(QUOTA_COST_SEARCH_LIST)
   if (!res.ok) {
+    const reason = await getYoutubeErrorReason(res)
+    if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
+      throw new YoutubeQuotaExceededError()
+    }
     throw new Error(`YouTube search failed with status ${res.status}`)
   }
 
@@ -185,4 +217,89 @@ export async function searchYoutubeVideos(
         null,
       channelTitle: decodeHtmlEntities(item.snippet.channelTitle),
     }))
+}
+
+export interface VideoTagInfo {
+  videoId: string
+  title: string
+  tags: string[]
+}
+
+interface VideosListSnippetResponse {
+  items: Array<{ id: string; snippet: { title: string; tags?: string[] } }>
+}
+
+/**
+ * videos.list costs a flat 1 quota unit per call regardless of how many ids
+ * are requested (up to its own 50-id cap) — unlike search.list, so this
+ * batches every id into one call instead of one call per video.
+ */
+export async function fetchVideoTagInfo(
+  videoIds: string[],
+): Promise<VideoTagInfo[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey || videoIds.length === 0) return []
+
+  const ids = videoIds.slice(0, 50)
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${encodeURIComponent(ids.join(","))}&key=${apiKey}`
+  const res = await fetch(url)
+  await recordYoutubeQuotaUsage(QUOTA_COST_VIDEOS_LIST)
+  if (!res.ok) return []
+
+  const body = (await res.json()) as VideosListSnippetResponse
+  return body.items.map((item) => ({
+    videoId: item.id,
+    title: item.snippet.title,
+    tags: item.snippet.tags ?? [],
+  }))
+}
+
+const RELATED_QUERY_STOPWORDS = new Set([
+  "the", "a", "an", "of", "to", "and", "in", "on", "for", "is",
+  "with", "official", "video", "music", "ft", "feat", "lyrics",
+  "audio", "hd", "4k",
+])
+
+/**
+ * Builds a single search query representing a whole set of videos (a room's
+ * queue plus its played history), rather than any one of them individually —
+ * so "related" reflects the room's overall taste, not just whatever's
+ * currently playing. Pure and easy to test without mocking network calls.
+ *
+ * Prefers each video's own uploader-set tags (most videos that have any tend
+ * to share several across a genre/artist), aggregated by frequency across
+ * every video passed in. Many uploads have no tags at all though, so if
+ * fewer than 2 distinct tags turn up across the whole set, this falls back
+ * to frequent, non-generic words pulled from the titles instead.
+ */
+export function buildRelatedVideosQuery(videos: VideoTagInfo[]): string {
+  const tagCounts = new Map<string, number>()
+  for (const video of videos) {
+    for (const rawTag of video.tags) {
+      const tag = rawTag.trim().toLowerCase()
+      if (!tag) continue
+      tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1)
+    }
+  }
+  const topTags = [...tagCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([tag]) => tag)
+
+  if (topTags.length >= 2) return topTags.join(" ")
+
+  const wordCounts = new Map<string, number>()
+  for (const video of videos) {
+    for (const rawWord of video.title.split(/[^a-zA-Z0-9]+/)) {
+      const word = rawWord.trim().toLowerCase()
+      if (word.length < 3 || RELATED_QUERY_STOPWORDS.has(word)) continue
+      wordCounts.set(word, (wordCounts.get(word) ?? 0) + 1)
+    }
+  }
+  const topWords = [...wordCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([word]) => word)
+
+  return [...topTags, ...topWords].join(" ")
 }

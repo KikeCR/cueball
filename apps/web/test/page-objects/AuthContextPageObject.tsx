@@ -15,6 +15,9 @@ function Probe() {
       <span data-testid="allow-long-videos">
         {user ? String(user.allowLongVideos) : "none"}
       </span>
+      <span data-testid="related-videos-beta">
+        {user ? String(user.relatedVideosBetaEnabled) : "none"}
+      </span>
       <span data-testid="apply-token-error">{applyTokenError ?? "none"}</span>
       <button onClick={() => login("sam@example.com", "password123")}>
         login
@@ -36,6 +39,11 @@ function Probe() {
       </button>
       <button onClick={() => void updateSettings({ allowLongVideos: true })}>
         enable-long-videos
+      </button>
+      <button
+        onClick={() => void updateSettings({ relatedVideosBetaEnabled: true })}
+      >
+        enable-related-videos-beta
       </button>
       <button onClick={logout}>logout</button>
     </div>
@@ -69,12 +77,20 @@ export class AuthContextPageObject {
     return screen.getByTestId("allow-long-videos").textContent
   }
 
+  get relatedVideosBetaText() {
+    return screen.getByTestId("related-videos-beta").textContent
+  }
+
   async login() {
     await this.user.click(screen.getByText("login"))
   }
 
   async enableLongVideos() {
     await this.user.click(screen.getByText("enable-long-videos"))
+  }
+
+  async enableRelatedVideosBeta() {
+    await this.user.click(screen.getByText("enable-related-videos-beta"))
   }
 
   async register() {

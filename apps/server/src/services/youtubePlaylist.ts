@@ -1,7 +1,13 @@
 import type { QueueItem, Room } from "@prisma/client"
+import { recordYoutubeQuotaUsage } from "../redis/youtubeQuota.js"
 import { prisma } from "./prisma.js"
 import { sortQueueItems } from "./roomService.js"
 import { getAuthorizedYoutubeClient } from "./youtubeAuth.js"
+
+// All four playlist write endpoints below cost 50 quota units per call
+// (Google's documented flat cost for any playlists.* or playlistItems.*
+// write) — unlike the ~1-5 units most read calls cost.
+const QUOTA_COST_PLAYLIST_WRITE = 50
 
 /**
  * Picks a user-facing reason for a failed YouTube playlist API call. The
@@ -26,16 +32,21 @@ export function describeYoutubePlaylistError(err: unknown): string {
 
 export async function createPlaylistForRoom(room: Room): Promise<string> {
   const youtube = getAuthorizedYoutubeClient(room)
-  const res = await youtube.playlists.insert({
-    part: ["snippet", "status"],
-    requestBody: {
-      snippet: {
-        title: room.name ?? `CueBall - ${room.code}`,
-        description: "Synced live by CueBall (cueball watch-party app)",
+  let res
+  try {
+    res = await youtube.playlists.insert({
+      part: ["snippet", "status"],
+      requestBody: {
+        snippet: {
+          title: room.name ?? `CueBall - ${room.code}`,
+          description: "Synced live by CueBall (cueball watch-party app)",
+        },
+        status: { privacyStatus: "unlisted" },
       },
-      status: { privacyStatus: "unlisted" },
-    },
-  })
+    })
+  } finally {
+    await recordYoutubeQuotaUsage(QUOTA_COST_PLAYLIST_WRITE)
+  }
 
   const playlistId = res.data.id
   if (!playlistId) throw new Error("YouTube did not return a playlist id")
@@ -54,18 +65,23 @@ export async function addVideoToPlaylist(
   if (!room.youtubePlaylistId) return
 
   const youtube = getAuthorizedYoutubeClient(room)
-  const res = await youtube.playlistItems.insert({
-    part: ["snippet"],
-    requestBody: {
-      snippet: {
-        playlistId: room.youtubePlaylistId,
-        resourceId: {
-          kind: "youtube#video",
-          videoId: queueItem.youtubeVideoId,
+  let res
+  try {
+    res = await youtube.playlistItems.insert({
+      part: ["snippet"],
+      requestBody: {
+        snippet: {
+          playlistId: room.youtubePlaylistId,
+          resourceId: {
+            kind: "youtube#video",
+            videoId: queueItem.youtubeVideoId,
+          },
         },
       },
-    },
-  })
+    })
+  } finally {
+    await recordYoutubeQuotaUsage(QUOTA_COST_PLAYLIST_WRITE)
+  }
 
   const playlistItemId = res.data.id
   if (!playlistItemId) return
@@ -80,14 +96,22 @@ export async function removeVideoFromPlaylist(
   playlistItemId: string,
 ): Promise<void> {
   const youtube = getAuthorizedYoutubeClient(room)
-  await youtube.playlistItems.delete({ id: playlistItemId })
+  try {
+    await youtube.playlistItems.delete({ id: playlistItemId })
+  } finally {
+    await recordYoutubeQuotaUsage(QUOTA_COST_PLAYLIST_WRITE)
+  }
 }
 
 /** Deletes the real playlist itself (e.g. when the room it belongs to is deleted). */
 export async function deletePlaylistForRoom(room: Room): Promise<void> {
   if (!room.youtubePlaylistId) return
   const youtube = getAuthorizedYoutubeClient(room)
-  await youtube.playlists.delete({ id: room.youtubePlaylistId })
+  try {
+    await youtube.playlists.delete({ id: room.youtubePlaylistId })
+  } finally {
+    await recordYoutubeQuotaUsage(QUOTA_COST_PLAYLIST_WRITE)
+  }
 }
 
 /**
@@ -119,17 +143,21 @@ export async function syncPlaylistOrderForItems(
 
   const youtube = getAuthorizedYoutubeClient(room)
   for (const [index, item] of syncedItems.entries()) {
-    await youtube.playlistItems.update({
-      part: ["snippet"],
-      requestBody: {
-        id: item.youtubePlaylistItemId,
-        snippet: {
-          playlistId,
-          position: index,
-          resourceId: { kind: "youtube#video", videoId: item.youtubeVideoId },
+    try {
+      await youtube.playlistItems.update({
+        part: ["snippet"],
+        requestBody: {
+          id: item.youtubePlaylistItemId,
+          snippet: {
+            playlistId,
+            position: index,
+            resourceId: { kind: "youtube#video", videoId: item.youtubeVideoId },
+          },
         },
-      },
-    })
+      })
+    } finally {
+      await recordYoutubeQuotaUsage(QUOTA_COST_PLAYLIST_WRITE)
+    }
   }
 }
 
