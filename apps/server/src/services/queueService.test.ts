@@ -321,7 +321,6 @@ describe("castVote", () => {
     await castVote({
       queueItemId: "item-1",
       participantId: "participant-1",
-      isHost: false,
       value: 1,
     })
 
@@ -344,7 +343,6 @@ describe("castVote", () => {
     await castVote({
       queueItemId: "item-1",
       participantId: "participant-1",
-      isHost: false,
       value: 1,
     })
 
@@ -362,7 +360,6 @@ describe("castVote", () => {
     await castVote({
       queueItemId: "item-1",
       participantId: "participant-1",
-      isHost: false,
       value: -1,
     })
 
@@ -385,7 +382,6 @@ describe("castVote", () => {
     await castVote({
       queueItemId: "item-1",
       participantId: "participant-2",
-      isHost: false,
       value: 1,
     })
 
@@ -394,26 +390,7 @@ describe("castVote", () => {
     )
   })
 
-  it("rejects a non-host vote while the room is in manual (host-reordered) mode", async () => {
-    vi.mocked(prisma.room.findUnique).mockResolvedValue({
-      manualQueueOrder: true,
-    } as never)
-
-    const result = await castVote({
-      queueItemId: "item-1",
-      participantId: "participant-1",
-      isHost: false,
-      value: 1,
-    })
-
-    expect(result).toEqual({
-      error: "The host set a custom order; only they can vote right now",
-    })
-    expect(prisma.vote.create).not.toHaveBeenCalled()
-    expect(prisma.queueItem.update).not.toHaveBeenCalled()
-  })
-
-  it("lets the host vote while in manual mode, and hands ordering back to the votes", async () => {
+  it("lets a non-host vote while the room is in manual (host-reordered) mode, and hands ordering back to the votes", async () => {
     vi.mocked(prisma.room.findUnique).mockResolvedValue({
       manualQueueOrder: true,
     } as never)
@@ -422,8 +399,7 @@ describe("castVote", () => {
 
     const result = await castVote({
       queueItemId: "item-1",
-      participantId: "host-participant",
-      isHost: true,
+      participantId: "participant-1",
       value: 1,
     })
 
@@ -442,7 +418,6 @@ describe("castVote", () => {
     await castVote({
       queueItemId: "item-1",
       participantId: "participant-1",
-      isHost: false,
       value: 1,
     })
 

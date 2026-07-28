@@ -50,4 +50,17 @@ describe("youtubeSearchCache", () => {
     vi.mocked(redis.get).mockResolvedValue(null)
     expect(await getCachedSearchResults("rick astley")).toBeNull()
   })
+
+  it("keys a category-filtered search separately from an unfiltered one", async () => {
+    await setCachedSearchResults("rick astley", sampleResults, "10")
+    expect(redis.set).toHaveBeenCalledWith(
+      "youtube-search:rick astley:cat10",
+      JSON.stringify(sampleResults),
+      "EX",
+      60 * 60,
+    )
+
+    await getCachedSearchResults("rick astley", "10")
+    expect(redis.get).toHaveBeenCalledWith("youtube-search:rick astley:cat10")
+  })
 })

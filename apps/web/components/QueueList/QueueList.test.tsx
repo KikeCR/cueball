@@ -224,7 +224,7 @@ describe("QueueList", () => {
     expect(queueList.repeatingBanner).not.toBeInTheDocument()
   })
 
-  it("pauses voting for a non-host once the host has set a manual order", () => {
+  it("still lets a non-host vote once the host has set a manual order, and shows the custom-order banner", () => {
     const onVote = vi.fn()
     const queueList = new QueueListPageObject({
       queue: [makeItem()],
@@ -235,12 +235,12 @@ describe("QueueList", () => {
       manualOrderActive: true,
     })
 
-    expect(queueList.upvoteButton).toBeDisabled()
-    expect(queueList.downvoteButton).toBeDisabled()
+    expect(queueList.upvoteButton).not.toBeDisabled()
+    expect(queueList.downvoteButton).not.toBeDisabled()
     expect(queueList.hasText(/host set a custom order/i)).toBe(true)
   })
 
-  it("still lets the host vote once they've set a manual order", () => {
+  it("shows the host's own version of the custom-order banner", () => {
     const queueList = new QueueListPageObject({
       queue: [makeItem()],
       participants,
@@ -252,7 +252,7 @@ describe("QueueList", () => {
 
     expect(queueList.upvoteButton).not.toBeDisabled()
     expect(queueList.downvoteButton).not.toBeDisabled()
-    expect(queueList.hasText(/voting is paused for everyone else/i)).toBe(true)
+    expect(queueList.hasText(/you set a custom order/i)).toBe(true)
   })
 
   it("doesn't pause voting when order is still vote-driven", () => {

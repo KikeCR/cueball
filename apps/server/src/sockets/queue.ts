@@ -34,6 +34,7 @@ import {
   fetchVideoTagInfo,
   formatDurationClock,
   groupVideosByTagCluster,
+  isLikelyDuplicateTitle,
   isYoutubeDataApiConfigured,
   parseYoutubeVideoId,
   searchYoutubeVideos,
@@ -267,16 +268,21 @@ export function registerQueueHandlers(io: Server): void {
           // tags first and searching each group separately means a mixed
           // queue still gets results targeted at each of its distinct
           // clusters, instead of one blended query that matches nothing.
+          // Each group also carries whichever category its videos mostly
+          // share (e.g. Music), so a music queue's results stay music
+          // instead of surfacing interviews/reaction clips about the same
+          // artist.
           const groups = groupVideosByTagCluster(tagInfo)
 
           const alreadyQueued = new Set(seedVideoIds)
+          const seedTitles = tagInfo.map((video) => video.title)
           const merged = new Map<string, YoutubeSearchResult>()
-          for (const { query } of groups) {
-            let results = await getCachedSearchResults(query)
+          for (const { query, videoCategoryId } of groups) {
+            let results = await getCachedSearchResults(query, videoCategoryId)
             if (!results) {
               try {
-                results = await searchYoutubeVideos(query)
-                await setCachedSearchResults(query, results)
+                results = await searchYoutubeVideos(query, { videoCategoryId })
+                await setCachedSearchResults(query, results, videoCategoryId)
               } catch (err) {
                 console.error(
                   `Failed to fetch a related-videos group for room ${roomId}`,
@@ -291,6 +297,17 @@ export function registerQueueHandlers(io: Server): void {
             }
             for (const result of results) {
               if (alreadyQueued.has(result.videoId)) continue
+              // A popular song routinely has several re-uploads under
+              // different video ids, so excluding by id alone still lets
+              // through videos the room already has, just from a different
+              // channel — this catches the same song by title instead,
+              // whether it's already in the room or already picked up from
+              // an earlier group this same refresh.
+              const alreadyHaveTitle = [
+                ...seedTitles,
+                ...[...merged.values()].map((r) => r.title),
+              ].some((title) => isLikelyDuplicateTitle(title, result.title))
+              if (alreadyHaveTitle) continue
               merged.set(result.videoId, result)
             }
           }
@@ -332,7 +349,6 @@ export function registerQueueHandlers(io: Server): void {
           const result = await castVote({
             queueItemId: payload.queueItemId,
             participantId,
-            isHost: participant.isHost,
             value: payload.value,
           })
           if ("error" in result) {

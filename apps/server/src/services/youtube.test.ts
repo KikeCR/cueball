@@ -13,7 +13,9 @@ import {
   fetchVideoTagInfo,
   formatDurationClock,
   groupVideosByTagCluster,
+  isLikelyDuplicateTitle,
   isYoutubeDataApiConfigured,
+  normalizeTitleForDedup,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
   searchYoutubeVideos,
@@ -219,6 +221,35 @@ describe("searchYoutubeVideos", () => {
     expect(recordYoutubeQuotaUsage).toHaveBeenCalledWith(100)
   })
 
+  it("includes videoCategoryId in the request when given", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await searchYoutubeVideos("city pop", { videoCategoryId: "10" })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("&videoCategoryId=10&"),
+    )
+  })
+
+  it("omits videoCategoryId from the request when not given", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [] }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await searchYoutubeVideos("city pop")
+
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).not.toContain("videoCategoryId")
+  })
+
   it("throws a distinguishable error when the daily quota is exceeded", async () => {
     vi.stubEnv("YOUTUBE_API_KEY", "test-key")
     vi.stubGlobal(
@@ -398,7 +429,10 @@ describe("fetchVideoTagInfo", () => {
       json: () =>
         Promise.resolve({
           items: [
-            { id: "abc", snippet: { title: "Song A", tags: ["indie", "rock"] } },
+            {
+              id: "abc",
+              snippet: { title: "Song A", tags: ["indie", "rock"], categoryId: "10" },
+            },
             { id: "def", snippet: { title: "Song B" } },
           ],
         }),
@@ -408,8 +442,8 @@ describe("fetchVideoTagInfo", () => {
     const result = await fetchVideoTagInfo(["abc", "def"])
 
     expect(result).toEqual([
-      { videoId: "abc", title: "Song A", tags: ["indie", "rock"] },
-      { videoId: "def", title: "Song B", tags: [] },
+      { videoId: "abc", title: "Song A", tags: ["indie", "rock"], categoryId: "10" },
+      { videoId: "def", title: "Song B", tags: [], categoryId: null },
     ])
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
@@ -429,7 +463,13 @@ describe("fetchVideoTagInfo", () => {
 
 describe("buildRelatedVideosQuery", () => {
   function video(overrides: Partial<VideoTagInfo> = {}): VideoTagInfo {
-    return { videoId: "abc", title: "Some Video", tags: [], ...overrides }
+    return {
+      videoId: "abc",
+      title: "Some Video",
+      tags: [],
+      categoryId: null,
+      ...overrides,
+    }
   }
 
   it("returns an empty string for no videos", () => {
@@ -483,6 +523,7 @@ describe("groupVideosByTagCluster", () => {
       videoId: `video-${Math.random()}`,
       title: "Some Video",
       tags: [],
+      categoryId: null,
       ...overrides,
     }
   }
@@ -556,5 +597,96 @@ describe("groupVideosByTagCluster", () => {
 
     expect(groups).toHaveLength(1)
     expect(groups[0]?.query).toContain("amazing")
+  })
+
+  it("tags a group with its videos' shared category, so search stays on-topic", () => {
+    const videos = [
+      video({ tags: ["city pop"], categoryId: "10" }),
+      video({ tags: ["city pop"], categoryId: "10" }),
+      video({ tags: ["city pop"], categoryId: "10" }),
+    ]
+
+    const groups = groupVideosByTagCluster(videos)
+
+    expect(groups[0]?.videoCategoryId).toBe("10")
+  })
+
+  it("leaves a group untagged when there's no clear majority category", () => {
+    const videos = [
+      video({ tags: ["shared"], categoryId: "10" }), // Music
+      video({ tags: ["shared"], categoryId: "24" }), // Entertainment (interview)
+    ]
+
+    const groups = groupVideosByTagCluster(videos)
+
+    expect(groups[0]?.videoCategoryId).toBeUndefined()
+  })
+
+  it("leaves a group untagged when none of its videos have a category", () => {
+    const videos = [
+      video({ tags: ["shared"], categoryId: null }),
+      video({ tags: ["shared"], categoryId: null }),
+    ]
+
+    const groups = groupVideosByTagCluster(videos)
+
+    expect(groups[0]?.videoCategoryId).toBeUndefined()
+  })
+})
+
+describe("normalizeTitleForDedup", () => {
+  it("strips bracketed/parenthetical decoration", () => {
+    expect(
+      normalizeTitleForDedup(
+        "Kingo Hamada [濱田金吾] - midnight cruisin' (FanMade Music Video)",
+      ),
+    ).toBe("kingo hamada midnight cruisin")
+  })
+
+  it("lowercases and collapses punctuation to single spaces", () => {
+    expect(normalizeTitleForDedup("Rock & Roll!!")).toBe("rock roll")
+  })
+
+  it("preserves non-Latin scripts", () => {
+    expect(normalizeTitleForDedup("街のドルフィン (Dolphin in Town)")).toBe(
+      "街のドルフィン",
+    )
+  })
+})
+
+describe("isLikelyDuplicateTitle", () => {
+  it("matches a re-upload with extra decoration around the same core title", () => {
+    expect(
+      isLikelyDuplicateTitle(
+        "Midnight Cruisin'",
+        "Kingo Hamada [濱田金吾] - midnight cruisin' (FanMade Music Video)",
+      ),
+    ).toBe(true)
+    expect(
+      isLikelyDuplicateTitle(
+        "Midnight Cruisin'",
+        "midnight cruisin' (1982) - Kingo Hamada 濱田金吾 【Lock Dance × 8bit】",
+      ),
+    ).toBe(true)
+  })
+
+  it("does not match unrelated titles", () => {
+    expect(isLikelyDuplicateTitle("Fireside", "Arctic Monkeys - Body Paint")).toBe(
+      false,
+    )
+  })
+
+  it("does not false-positive on a short/generic normalized title", () => {
+    expect(isLikelyDuplicateTitle("MV", "Some Random MV Compilation")).toBe(false)
+  })
+
+  it("still matches when both titles are identical after normalization", () => {
+    expect(isLikelyDuplicateTitle("Ride On Time", "Ride on Time!")).toBe(true)
+  })
+
+  it("can't bridge different scripts for the same song (known limitation)", () => {
+    expect(
+      isLikelyDuplicateTitle("Machi No Dorufin", "街のドルフィン (Dolphin in Town)"),
+    ).toBe(false)
   })
 })

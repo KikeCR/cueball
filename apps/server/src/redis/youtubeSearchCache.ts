@@ -11,23 +11,30 @@ function normalizeQuery(query: string): string {
   return query.trim().toLowerCase()
 }
 
-function searchCacheKey(query: string): string {
-  return `youtube-search:${normalizeQuery(query)}`
+// A category-filtered search for the same query text is a genuinely
+// different request to YouTube (and returns different results) from an
+// unfiltered one, so it needs its own cache entry — folded into the key only
+// when present, so plain-text search's (unfiltered) cache keys are unchanged.
+function searchCacheKey(query: string, videoCategoryId?: string): string {
+  const suffix = videoCategoryId ? `:cat${videoCategoryId}` : ""
+  return `youtube-search:${normalizeQuery(query)}${suffix}`
 }
 
 export async function getCachedSearchResults(
   query: string,
+  videoCategoryId?: string,
 ): Promise<YoutubeSearchResult[] | null> {
-  const raw = await redis.get(searchCacheKey(query))
+  const raw = await redis.get(searchCacheKey(query, videoCategoryId))
   return raw ? (JSON.parse(raw) as YoutubeSearchResult[]) : null
 }
 
 export async function setCachedSearchResults(
   query: string,
   results: YoutubeSearchResult[],
+  videoCategoryId?: string,
 ): Promise<void> {
   await redis.set(
-    searchCacheKey(query),
+    searchCacheKey(query, videoCategoryId),
     JSON.stringify(results),
     "EX",
     SEARCH_CACHE_TTL_SECONDS,
