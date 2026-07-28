@@ -332,7 +332,6 @@ export function registerQueueHandlers(io: Server): void {
           const result = await castVote({
             queueItemId: payload.queueItemId,
             participantId,
-            isHost: participant.isHost,
             value: payload.value,
           })
           if ("error" in result) {

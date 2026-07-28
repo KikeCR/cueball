@@ -59,15 +59,17 @@ export type CastVoteResult = { item: QueueItemWithVotes } | { error: string }
 /**
  * Casting the same vote twice removes it; casting the opposite vote flips it.
  *
- * Order is normally vote-driven. Once a host drag switches the room into
- * manual order, non-host votes are paused (they'd have no visible effect,
- * so better to reject than silently accept) until a host casts a vote,
- * which hands ordering back to the votes.
+ * Order is normally vote-driven. A host drag can switch the room into
+ * manual order, but only drag-reordering is host-only — voting itself isn't
+ * restricted to the host, and any vote (from anyone) hands ordering back to
+ * the votes. Drag-reordering is the one deliberate, host-only action;
+ * recovering from it shouldn't also require finding that same host again,
+ * so voting always does something rather than silently no-op-ing for
+ * everyone else until the host happens to vote.
  */
 export async function castVote(params: {
   queueItemId: string
   participantId: string
-  isHost: boolean
   value: 1 | -1
 }): Promise<CastVoteResult> {
   return prisma.$transaction(async (tx): Promise<CastVoteResult> => {
@@ -82,11 +84,6 @@ export async function castVote(params: {
       where: { id: item.roomId },
       select: { manualQueueOrder: true },
     })
-    if (room?.manualQueueOrder && !params.isHost) {
-      return {
-        error: "The host set a custom order; only they can vote right now",
-      }
-    }
 
     const existing = await tx.vote.findUnique({
       where: {
@@ -125,7 +122,7 @@ export async function castVote(params: {
       include: { votes: true },
     })
 
-    if (room?.manualQueueOrder && params.isHost) {
+    if (room?.manualQueueOrder) {
       await tx.room.update({
         where: { id: item.roomId },
         data: { manualQueueOrder: false },

@@ -77,7 +77,6 @@ export function QueueList({
     ? (participants.find((p) => p.id === selfId) ?? null)
     : null
   const canReorder = Boolean(self?.isHost && onReorder) && !reordering
-  const votingLocked = manualOrderActive && !self?.isHost
 
   const upcoming = queue.filter(
     (item) => !item.playedAt && item.id !== excludeQueueItemId,
@@ -119,8 +118,8 @@ export function QueueList({
       {manualOrderActive && (
         <li className="rounded-md border border-border bg-surface-hover px-3 py-2 text-xs text-muted">
           {self?.isHost
-            ? "You set a custom order — voting is paused for everyone else until you vote."
-            : "The host set a custom order. Voting is paused until the host votes."}
+            ? "You set a custom order, any vote switches it back to vote order."
+            : "The host set a custom order. Voting will switch it back to vote order."}
         </li>
       )}
       {upcoming.length === 0 ? (
@@ -167,8 +166,6 @@ export function QueueList({
                   type="button"
                   aria-label="Upvote"
                   aria-pressed={myVote === 1}
-                  disabled={votingLocked}
-                  title={votingLocked ? "Voting is paused" : undefined}
                   onClick={() => onVote(item.id, 1)}
                   className={cn(
                     "rounded-md border border-border p-1.5 text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
@@ -187,8 +184,6 @@ export function QueueList({
                   type="button"
                   aria-label="Downvote"
                   aria-pressed={myVote === -1}
-                  disabled={votingLocked}
-                  title={votingLocked ? "Voting is paused" : undefined}
                   onClick={() => onVote(item.id, -1)}
                   className={cn(
                     "rounded-md border border-border p-1.5 text-muted transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
