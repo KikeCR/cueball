@@ -334,7 +334,10 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ videoId: "dQw4w9WgXcQ" })
+    expect(result).toEqual({
+      reachable: true,
+      nowPlaying: { videoId: "dQw4w9WgXcQ" },
+    })
   })
 
   it("takes the last nowPlaying event in a batch, not the first", async () => {
@@ -348,7 +351,10 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ videoId: "new-video" })
+    expect(result).toEqual({
+      reachable: true,
+      nowPlaying: { videoId: "new-video" },
+    })
   })
 
   it("reports videoId null (not the whole result null) when the receiver explicitly signals nothing is playing", async () => {
@@ -360,10 +366,10 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ videoId: null })
+    expect(result).toEqual({ reachable: true, nowPlaying: { videoId: null } })
   })
 
-  it("returns null when there's no nowPlaying event", async () => {
+  it("reports reachable with no nowPlaying when there's no nowPlaying event", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -371,19 +377,30 @@ describe("getLoungeNowPlaying", () => {
         text: () => Promise.resolve('[[0,["onStateChange",{}]]]'),
       }),
     )
-    expect(await getLoungeNowPlaying(sampleSession)).toBeNull()
+    expect(await getLoungeNowPlaying(sampleSession)).toEqual({
+      reachable: true,
+      nowPlaying: null,
+    })
   })
 
-  it("returns null instead of throwing on a failed request", async () => {
+  it("reports unreachable instead of throwing on a failed request", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 400 }))
-    expect(await getLoungeNowPlaying(sampleSession)).toBeNull()
+    expect(await getLoungeNowPlaying(sampleSession)).toEqual({ reachable: false })
   })
 
-  it("returns null instead of throwing on unparseable content", async () => {
+  it("reports unreachable instead of throwing when the request itself throws", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")))
+    expect(await getLoungeNowPlaying(sampleSession)).toEqual({ reachable: false })
+  })
+
+  it("reports reachable with no nowPlaying instead of throwing on unparseable content", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("not json at all") }),
     )
-    expect(await getLoungeNowPlaying(sampleSession)).toBeNull()
+    expect(await getLoungeNowPlaying(sampleSession)).toEqual({
+      reachable: true,
+      nowPlaying: null,
+    })
   })
 })

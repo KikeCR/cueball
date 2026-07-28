@@ -301,15 +301,26 @@ export interface LoungeNowPlaying {
 }
 
 /**
+ * `reachable: false` means the bind request itself failed to reach YouTube
+ * (a non-ok response, or the fetch throwing outright) — the strongest signal
+ * this integration has that the receiver's Lounge session has actually died
+ * (e.g. the TV's YouTube app was closed), as opposed to `reachable: true,
+ * nowPlaying: null`, which just means a normal poll came back with no new
+ * `nowPlaying` event and says nothing about whether the receiver is still
+ * there.
+ */
+export type LoungeNowPlayingResult =
+  | { reachable: true; nowPlaying: LoungeNowPlaying | null }
+  | { reachable: false }
+
+/**
  * Best-effort poll of the receiver's current video — the least-verified
  * part of this integration. The reference implementation only demonstrates
  * extracting a playlist id from this same endpoint; the rest of the
- * `nowPlaying` payload's shape is inferred, not confirmed. Returns null on
- * anything unexpected rather than throwing, since this drives a polling
- * loop that must never take the server down. Only the video id is tracked —
- * play/pause state and playback position aren't surfaced anywhere in the
- * app, so there's no need to parse the timing-related event data at all,
- * beyond noticing when `videoId` itself comes back empty (see
+ * `nowPlaying` payload's shape is inferred, not confirmed. Only the video id
+ * is tracked — play/pause state and playback position aren't surfaced
+ * anywhere in the app, so there's no need to parse the timing-related event
+ * data at all, beyond noticing when `videoId` itself comes back empty (see
  * `LoungeNowPlaying.videoId`'s doc comment).
  *
  * A single poll response can contain a batch of several queued events, not
@@ -319,33 +330,43 @@ export interface LoungeNowPlaying {
  */
 export async function getLoungeNowPlaying(
   session: LoungeSessionState,
-): Promise<LoungeNowPlaying | null> {
+): Promise<LoungeNowPlayingResult> {
+  const query = encodeForm({
+    loungeIdToken: session.loungeToken,
+    VER: 8,
+    v: 2,
+    RID: "rpc",
+    SID: session.sid,
+    gsessionid: session.gsessionid,
+    TYPE: "xmlhttp",
+    t: 1,
+    AID: 5,
+    CI: 1,
+    ...BIND_DATA,
+  })
+
+  let res: Response
   try {
-    const query = encodeForm({
-      loungeIdToken: session.loungeToken,
-      VER: 8,
-      v: 2,
-      RID: "rpc",
-      SID: session.sid,
-      gsessionid: session.gsessionid,
-      TYPE: "xmlhttp",
-      t: 1,
-      AID: 5,
-      CI: 1,
-      ...BIND_DATA,
-    })
-    const res = await fetch(`${BIND_URL}?${query}`, {
+    res = await fetch(`${BIND_URL}?${query}`, {
       method: "POST",
       headers: { ...BASE_HEADERS, [LOUNGE_ID_HEADER]: session.loungeToken },
     })
-    if (!res.ok) return null
+  } catch {
+    return { reachable: false }
+  }
+  if (!res.ok) return { reachable: false }
 
+  // Anything unexpected past this point (unparseable body, odd event shape)
+  // is treated as "no event this tick" rather than "unreachable" — the
+  // request itself succeeded, so this isn't evidence the receiver is gone,
+  // just that this batch didn't have anything usable in it.
+  try {
     const text = (await res.text()).replace(/\n/g, "")
     const start = text.indexOf("[")
-    if (start === -1) return null
+    if (start === -1) return { reachable: true, nowPlaying: null }
     const events = JSON.parse(text.slice(start)) as Array<[number, [string, unknown]]>
 
-    let result: LoungeNowPlaying | null = null
+    let nowPlaying: LoungeNowPlaying | null = null
     for (const event of events) {
       const [key, value] = event[1] ?? []
       if (key !== "nowPlaying" || !value || typeof value !== "object") continue
@@ -354,10 +375,10 @@ export async function getLoungeNowPlaying(
         typeof data.videoId === "string" && data.videoId.length > 0
           ? data.videoId
           : null
-      result = { videoId }
+      nowPlaying = { videoId }
     }
-    return result
+    return { reachable: true, nowPlaying }
   } catch {
-    return null
+    return { reachable: true, nowPlaying: null }
   }
 }

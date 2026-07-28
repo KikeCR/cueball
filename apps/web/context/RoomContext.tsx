@@ -36,6 +36,16 @@ import { decodeJwtPayload } from "../utils/jwt"
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
 const RECONNECT_TIMEOUT_MS = 4000
 
+// A quick tab switch doesn't need any help — socket.io's own reconnection
+// handles a normal blip fine. A longer background stint is different,
+// especially for an iOS home-screen PWA: the OS can silently kill the
+// socket's underlying connection while the app is suspended without ever
+// firing a close event, so the client-side socket object still thinks it's
+// connected. Left alone, that's only noticed once a ping goes unanswered,
+// which can take up to ~45s. Forcing a fresh handshake as soon as the page
+// is visible again skips that wait.
+const VISIBILITY_RECONNECT_THRESHOLD_MS = 5000
+
 function emitAction(
   socket: Socket | null,
   event: string,
@@ -154,18 +164,48 @@ export function RoomProvider({
       },
     )
 
-    const staleTimer = token
-      ? window.setTimeout(() => {
-          if (!receivedState) {
-            clearParticipantToken(roomCode)
-            setSelfId(null)
-            setReconnecting(false)
-          }
-        }, RECONNECT_TIMEOUT_MS)
-      : undefined
+    let staleTimer: number | undefined
+    const scheduleStaleCheck = () => {
+      if (staleTimer) window.clearTimeout(staleTimer)
+      staleTimer = window.setTimeout(() => {
+        if (!receivedState) {
+          clearParticipantToken(roomCode)
+          setSelfId(null)
+          setReconnecting(false)
+        }
+      }, RECONNECT_TIMEOUT_MS)
+    }
+    if (token) scheduleStaleCheck()
+
+    let hiddenAt: number | null = null
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now()
+        return
+      }
+      if (hiddenAt === null) return
+      const hiddenForMs = Date.now() - hiddenAt
+      hiddenAt = null
+      if (hiddenForMs < VISIBILITY_RECONNECT_THRESHOLD_MS) return
+
+      // Force a fresh handshake unconditionally rather than checking
+      // `socket.connected` first — after a real background suspension that
+      // flag can't be trusted, since the transport can die silently without
+      // the client ever finding out. Disconnecting a socket that actually
+      // was still fine is cheap and harmless; it just repeats the same
+      // rejoin round-trip a normal reconnect would do anyway.
+      const currentToken = getStoredParticipantToken(roomCode)
+      receivedState = false
+      setReconnecting(Boolean(currentToken))
+      if (currentToken) scheduleStaleCheck()
+      socket.disconnect()
+      socket.connect()
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       if (staleTimer) window.clearTimeout(staleTimer)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       socket.disconnect()
       socketRef.current = null
       setSocket(null)
