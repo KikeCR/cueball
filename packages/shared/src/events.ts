@@ -48,6 +48,8 @@ export interface RoomStatePayload {
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
   cast: CastSessionState | null
+  /** Shared across the whole room, like the queue — refreshed by any participant, seen by everyone. */
+  relatedVideos: YoutubeSearchResult[]
 }
 
 export interface RoomJoinResult {
@@ -58,6 +60,7 @@ export interface RoomJoinResult {
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
   cast: CastSessionState | null
+  relatedVideos: YoutubeSearchResult[]
 }
 
 export interface ActionError {
@@ -123,11 +126,6 @@ export interface QueueSetPlayedPayload {
 export interface QueueClearResult {
   clearedCount: number
   totalCount: number
-}
-
-/** Requested manually (a refresh button), not on every queue change — search.list is quota-expensive. */
-export interface QueueRelatedResult {
-  results: YoutubeSearchResult[]
 }
 
 export interface RoomSetRepeatPayload {

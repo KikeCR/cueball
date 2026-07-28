@@ -8,6 +8,7 @@ import {
 import { CAST_MODE, ROOM_CODE_LENGTH, type RoomMode } from "@cueball/shared"
 import { getConnectedParticipantIds } from "../redis/presence.js"
 import { getCastState } from "../redis/castSession.js"
+import { getRelatedVideosState } from "../redis/relatedVideosSession.js"
 import {
   serializeParticipant,
   serializeQueueItem,
@@ -425,6 +426,18 @@ export async function getRoomState(roomId: string) {
   const connected = await getConnectedParticipantIds(roomId)
   const cast = await getCastState(roomId)
   const relatedVideosEnabled = await roomAllowsRelatedVideos(room.hostUserId)
+
+  // Filtered against the current queue (played or not) at read time, not
+  // just at the moment someone refreshed — so the instant anyone adds a
+  // suggested video, it disappears from the shared list for everyone on the
+  // very next broadcast (the same one QueueAdd already triggers), without
+  // needing a fresh search.
+  const relatedVideosStored = await getRelatedVideosState(roomId)
+  const queuedVideoIds = new Set(queueItems.map((item) => item.youtubeVideoId))
+  const relatedVideos = (relatedVideosStored ?? []).filter(
+    (result) => !queuedVideoIds.has(result.videoId),
+  )
+
   return {
     room: { ...serializeRoom(room), relatedVideosEnabled },
     participants: room.participants.map((p) =>
@@ -432,5 +445,6 @@ export async function getRoomState(roomId: string) {
     ),
     queue: queueItems.map(serializeQueueItem),
     cast,
+    relatedVideos,
   }
 }

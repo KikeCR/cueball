@@ -7,7 +7,6 @@ import {
   type ActionOk,
   type QueueAddPayload,
   type QueueClearResult,
-  type QueueRelatedResult,
   type QueueRemovePayload,
   type QueueReorderPayload,
   type QueueSetPlayedPayload,
@@ -46,6 +45,7 @@ import {
   setCachedSearchResults,
 } from "../redis/youtubeSearchCache.js"
 import { isRelatedVideosQuotaHealthy } from "../redis/youtubeQuota.js"
+import { setRelatedVideosState } from "../redis/relatedVideosSession.js"
 import { prisma } from "../services/prisma.js"
 import {
   addVideoToPlaylist,
@@ -211,10 +211,7 @@ export function registerQueueHandlers(io: Server): void {
     // per call against a project-wide daily budget, so this can't run on
     // every add/remove without exhausting it after a handful of active
     // rooms.
-    socket.on(SocketEvents.QueueRelated, (
-      _payload: unknown,
-      ack?: (result: QueueRelatedResult | ActionError) => void,
-    ) => {
+    socket.on(SocketEvents.QueueRelated, (_payload: unknown, ack?: Ack) => {
       void (async () => {
         const { roomId } = socket.data
         if (!roomId) {
@@ -257,7 +254,9 @@ export function registerQueueHandlers(io: Server): void {
           ...new Set(roomState.queue.map((item) => item.youtubeVideoId)),
         ]
         if (seedVideoIds.length === 0) {
-          ack?.({ results: [] } satisfies QueueRelatedResult)
+          await setRelatedVideosState(roomId, [])
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
           return
         }
 
@@ -312,7 +311,12 @@ export function registerQueueHandlers(io: Server): void {
             }
           }
 
-          ack?.({ results: [...merged.values()] } satisfies QueueRelatedResult)
+          // Shared room state, not per-socket — everyone sees whatever the
+          // last refresh (by anyone) found, the same way everyone already
+          // sees the same queue.
+          await setRelatedVideosState(roomId, [...merged.values()])
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
         } catch (err) {
           console.error(
             `Failed to fetch related videos for room ${roomId}`,

@@ -9,19 +9,17 @@ import { Button } from "../ui/button"
 import { Spinner } from "../ui/spinner"
 
 export function RelatedVideosSection() {
-  const { fetchRelatedVideos, addToQueue } = useRoom()
+  const { relatedVideos, fetchRelatedVideos, addToQueue } = useRoom()
   const toast = useToast()
-  const [results, setResults] = useState<YoutubeSearchResult[]>([])
   const [loading, setLoading] = useState(false)
-  const [hasFetched, setHasFetched] = useState(false)
   const [addingVideoId, setAddingVideoId] = useState<string | null>(null)
 
+  // Shared room state (see RoomContext's `relatedVideos`), so a refresh
+  // here updates the list for everyone in the room, not just this tab.
   const handleRefresh = async () => {
     setLoading(true)
     try {
-      const related = await fetchRelatedVideos()
-      setResults(related)
-      setHasFetched(true)
+      await fetchRelatedVideos()
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to load related videos",
@@ -35,10 +33,6 @@ export function RelatedVideosSection() {
     setAddingVideoId(result.videoId)
     try {
       await addToQueue(`https://www.youtube.com/watch?v=${result.videoId}`)
-      // Drops it from the list rather than re-fetching — re-fetching would
-      // spend another 100-unit search.list call just to redraw a list that,
-      // aside from this one now-queued video, hasn't actually changed.
-      setResults((prev) => prev.filter((r) => r.videoId !== result.videoId))
       toast.success("Added to queue")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add video")
@@ -69,19 +63,16 @@ export function RelatedVideosSection() {
         </Button>
       </div>
 
-      {!hasFetched && !loading && (
+      {!loading && relatedVideos.length === 0 && (
         <p className="text-sm text-muted">
-          Get suggestions based on what's in this room's queue.
+          No related videos yet — click refresh to check for suggestions
+          based on the queue.
         </p>
       )}
 
-      {hasFetched && !loading && results.length === 0 && (
-        <p className="text-sm text-muted">No related videos found.</p>
-      )}
-
-      {results.length > 0 && (
+      {relatedVideos.length > 0 && (
         <ul className="flex flex-col gap-1">
-          {results.map((result) => (
+          {relatedVideos.map((result) => (
             <li key={result.videoId}>
               <button
                 type="button"

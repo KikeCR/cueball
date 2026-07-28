@@ -132,6 +132,7 @@ export function registerRoomHandlers(io: Server): void {
             participants: state.participants,
             queue: state.queue,
             cast: state.cast,
+            relatedVideos: state.relatedVideos,
           })
 
           socket

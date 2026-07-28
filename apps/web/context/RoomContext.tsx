@@ -21,7 +21,6 @@ import {
   type PlaylistSyncFailedPayload,
   type QueueClearResult,
   type QueueItem,
-  type QueueRelatedResult,
   type Room,
   type RoomJoinResult,
   type RoomStatePayload,
@@ -77,6 +76,8 @@ interface RoomContextValue {
   participants: ParticipantWithPresence[]
   queue: QueueItem[]
   cast: CastSessionState | null
+  /** Shared across the room, like the queue — refreshed by any participant, seen by everyone. */
+  relatedVideos: YoutubeSearchResult[]
   self: ParticipantWithPresence | null
   /** Set when the host removes this participant; cleared on the next successful join. */
   removedReason: string | null
@@ -90,7 +91,7 @@ interface RoomContextValue {
   setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
   clearQueue: () => Promise<QueueClearResult>
   clearHistory: () => Promise<void>
-  fetchRelatedVideos: () => Promise<YoutubeSearchResult[]>
+  fetchRelatedVideos: () => Promise<void>
   setRepeat: (enabled: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   promoteParticipant: (participantId: string) => Promise<void>
@@ -118,6 +119,7 @@ export function RoomProvider({
   )
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [cast, setCast] = useState<CastSessionState | null>(null)
+  const [relatedVideos, setRelatedVideos] = useState<YoutubeSearchResult[]>([])
   const [selfId, setSelfId] = useState<string | null>(null)
   const [removedReason, setRemovedReason] = useState<string | null>(null)
   const [playlistSyncError, setPlaylistSyncError] = useState<{
@@ -151,6 +153,7 @@ export function RoomProvider({
       setParticipants(state.participants)
       setQueue(state.queue)
       setCast(state.cast)
+      setRelatedVideos(state.relatedVideos)
     })
     socket.on(
       SocketEvents.ParticipantRemoved,
@@ -236,6 +239,7 @@ export function RoomProvider({
             setParticipants(result.participants)
             setQueue(result.queue)
             setCast(result.cast)
+            setRelatedVideos(result.relatedVideos)
             setSelfId(result.participant.id)
             setRemovedReason(null)
             resolve()
@@ -327,26 +331,12 @@ export function RoomProvider({
     [],
   )
 
+  // Fire-and-forget: the ack only confirms the refresh ran, the resulting
+  // list itself arrives for everyone in the room via the next RoomState
+  // broadcast (see `relatedVideos` above), not through this call's return
+  // value — refreshing is a shared room action, not a per-viewer fetch.
   const fetchRelatedVideos = useCallback(
-    () =>
-      new Promise<YoutubeSearchResult[]>((resolve, reject) => {
-        const socket = socketRef.current
-        if (!socket) {
-          reject(new Error("Not connected"))
-          return
-        }
-        socket.emit(
-          SocketEvents.QueueRelated,
-          {},
-          (result: QueueRelatedResult | ActionError) => {
-            if ("error" in result) {
-              reject(new Error(result.error))
-              return
-            }
-            resolve(result.results)
-          },
-        )
-      }),
+    () => emitAction(socketRef.current, SocketEvents.QueueRelated, {}),
     [],
   )
 
@@ -405,6 +395,7 @@ export function RoomProvider({
         participants,
         queue,
         cast,
+        relatedVideos,
         self,
         removedReason,
         playlistSyncError,
