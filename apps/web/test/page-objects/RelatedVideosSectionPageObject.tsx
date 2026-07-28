@@ -13,12 +13,8 @@ export class RelatedVideosSectionPageObject {
     return screen.getByRole("button", { name: /refresh/i })
   }
 
-  get emptyPromptText() {
-    return screen.queryByText(/get suggestions based on/i)
-  }
-
-  get noResultsText() {
-    return screen.queryByText(/no related videos found/i)
+  get emptyStateText() {
+    return screen.queryByText(/no related videos yet/i)
   }
 
   async clickRefresh() {

@@ -1,14 +1,17 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { YoutubeSearchResult } from "@cueball/shared"
 import { RelatedVideosSectionPageObject } from "../../test/page-objects/RelatedVideosSectionPageObject"
 
 const fetchRelatedVideosMock = vi.fn()
 const addToQueueMock = vi.fn()
 const toastSuccessMock = vi.fn()
 const toastErrorMock = vi.fn()
+let mockRelatedVideos: YoutubeSearchResult[] = []
 
 vi.mock("../../context/RoomContext", () => ({
   useRoom: () => ({
+    relatedVideos: mockRelatedVideos,
     fetchRelatedVideos: fetchRelatedVideosMock,
     addToQueue: addToQueueMock,
   }),
@@ -18,7 +21,7 @@ vi.mock("../../context/ToastContext", () => ({
   useToast: () => ({ success: toastSuccessMock, error: toastErrorMock }),
 }))
 
-const sampleResults = [
+const sampleResults: YoutubeSearchResult[] = [
   {
     videoId: "abc123",
     title: "Some Song",
@@ -39,37 +42,36 @@ describe("RelatedVideosSection", () => {
     addToQueueMock.mockReset()
     toastSuccessMock.mockReset()
     toastErrorMock.mockReset()
+    mockRelatedVideos = []
   })
 
-  it("shows a prompt before the first refresh, not results or an empty state", () => {
+  it("shows an empty-state message when there are no related videos yet", () => {
     const section = new RelatedVideosSectionPageObject()
-    expect(section.emptyPromptText).toBeInTheDocument()
-    expect(section.noResultsText).not.toBeInTheDocument()
+    expect(section.emptyStateText).toBeInTheDocument()
   })
 
-  it("fetches and shows results only when refresh is clicked", async () => {
-    fetchRelatedVideosMock.mockResolvedValue(sampleResults)
+  it("triggers a refresh without directly returning results — the shared list updates via room state", async () => {
+    fetchRelatedVideosMock.mockResolvedValue(undefined)
     const section = new RelatedVideosSectionPageObject()
-
-    expect(fetchRelatedVideosMock).not.toHaveBeenCalled()
 
     await section.clickRefresh()
 
     expect(fetchRelatedVideosMock).toHaveBeenCalledTimes(1)
-    await waitFor(() =>
-      expect(section.queryResultButton("Some Song")).toBeInTheDocument(),
-    )
-    expect(section.queryResultButton("Another Song")).toBeInTheDocument()
+    expect(fetchRelatedVideosMock).toHaveBeenCalledWith()
   })
 
-  it("shows a no-results message after refreshing to an empty list", async () => {
-    fetchRelatedVideosMock.mockResolvedValue([])
+  it("shows whatever is currently in the shared related-videos list", async () => {
+    mockRelatedVideos = sampleResults
+    fetchRelatedVideosMock.mockImplementation(async () => {})
     const section = new RelatedVideosSectionPageObject()
 
     await section.clickRefresh()
 
-    await waitFor(() => expect(section.noResultsText).toBeInTheDocument())
-    expect(section.emptyPromptText).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(section.queryResultButton("Some Song")).toBeInTheDocument(),
+    )
+    expect(section.queryResultButton("Another Song")).toBeInTheDocument()
+    expect(section.emptyStateText).not.toBeInTheDocument()
   })
 
   it("toasts an error when the refresh fails", async () => {
@@ -87,15 +89,10 @@ describe("RelatedVideosSection", () => {
     )
   })
 
-  it("adds a result to the queue and removes it from the list on success", async () => {
-    fetchRelatedVideosMock.mockResolvedValue(sampleResults)
+  it("adds a result to the queue and toasts success", async () => {
+    mockRelatedVideos = sampleResults
     addToQueueMock.mockResolvedValue(undefined)
     const section = new RelatedVideosSectionPageObject()
-
-    await section.clickRefresh()
-    await waitFor(() =>
-      expect(section.queryResultButton("Some Song")).toBeInTheDocument(),
-    )
 
     await section.clickResult("Some Song")
 
@@ -105,20 +102,12 @@ describe("RelatedVideosSection", () => {
     await waitFor(() =>
       expect(toastSuccessMock).toHaveBeenCalledWith("Added to queue"),
     )
-    expect(section.queryResultButton("Some Song")).not.toBeInTheDocument()
-    // The other suggestion wasn't touched, so it stays in the list.
-    expect(section.queryResultButton("Another Song")).toBeInTheDocument()
   })
 
-  it("toasts an error and keeps the result when adding fails", async () => {
-    fetchRelatedVideosMock.mockResolvedValue(sampleResults)
+  it("toasts an error when adding fails", async () => {
+    mockRelatedVideos = sampleResults
     addToQueueMock.mockRejectedValue(new Error("That video is already in the queue"))
     const section = new RelatedVideosSectionPageObject()
-
-    await section.clickRefresh()
-    await waitFor(() =>
-      expect(section.queryResultButton("Some Song")).toBeInTheDocument(),
-    )
 
     await section.clickResult("Some Song")
 
@@ -127,6 +116,5 @@ describe("RelatedVideosSection", () => {
         "That video is already in the queue",
       ),
     )
-    expect(section.queryResultButton("Some Song")).toBeInTheDocument()
   })
 })
