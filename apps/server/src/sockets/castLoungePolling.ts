@@ -1,7 +1,8 @@
 import type { Server } from "socket.io"
 import { redis } from "../redis/client.js"
-import { getCastState, setCastState } from "../redis/castSession.js"
+import { clearCastState, getCastState, setCastState } from "../redis/castSession.js"
 import {
+  clearLoungeSessionState,
   getLoungeSessionState,
   setLoungeSessionState,
 } from "../redis/castLoungeSession.js"
@@ -33,6 +34,14 @@ const LOUNGE_KEY_PATTERN = "room:*:lounge"
 const STOP_CONFIRM_TICKS = 2
 const pendingStopTicks = new Map<string, number>()
 
+// A single failed bind request can just be a network blip on our end, not
+// the receiver actually being gone — a real dead session (TV app closed)
+// fails every subsequent request, so this only needs to rule out transient
+// hiccups, not wait out anything the receiver itself is doing. 10 ticks at
+// POLL_INTERVAL_MS is 20 seconds of sustained failure before believing it.
+const DISCONNECT_CONFIRM_TICKS = 10
+const pendingDisconnectTicks = new Map<string, number>()
+
 function roomIdFromLoungeKey(key: string): string | null {
   return /^room:(.+):lounge$/.exec(key)?.[1] ?? null
 }
@@ -47,7 +56,7 @@ function roomIdFromLoungeKey(key: string): string | null {
  * advance, broadcast) whenever they disagree — regardless of whether that
  * happened because a video simply finished or because someone hit skip.
  */
-async function pollRoom(io: Server, roomId: string): Promise<void> {
+export async function pollRoom(io: Server, roomId: string): Promise<void> {
   await withLoungeLock(roomId, () => reconcileRoom(io, roomId))
 }
 
@@ -55,12 +64,33 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   const lounge = await getLoungeSessionState(roomId)
   if (!lounge) return
 
+  const result = await getLoungeNowPlaying(lounge)
+
+  if (!result.reachable) {
+    const ticks = (pendingDisconnectTicks.get(roomId) ?? 0) + 1
+    if (ticks < DISCONNECT_CONFIRM_TICKS) {
+      pendingDisconnectTicks.set(roomId, ticks)
+      return
+    }
+    // Sustained failure, not a blip — the receiver's session is actually
+    // gone (e.g. the TV's YouTube app was closed). Clear our side so the
+    // room stops claiming to be connected and stops burning API calls
+    // polling a session that will never respond again.
+    pendingDisconnectTicks.delete(roomId)
+    pendingStopTicks.delete(roomId)
+    await clearCastState(roomId)
+    await clearLoungeSessionState(roomId)
+    await broadcastRoomState(io, roomId)
+    return
+  }
+  pendingDisconnectTicks.delete(roomId)
+
   // Null here means no event arrived in this poll at all — try again next
   // tick. That's different from `nowPlaying.videoId` itself being null,
   // which means an event *did* arrive and it's explicitly reporting
   // nothing playing (see getLoungeNowPlaying's doc comment) — a real signal
   // this function needs to react to, not skip.
-  const nowPlaying = await getLoungeNowPlaying(lounge)
+  const nowPlaying = result.nowPlaying
   if (!nowPlaying) return
 
   const cast = await getCastState(roomId)
