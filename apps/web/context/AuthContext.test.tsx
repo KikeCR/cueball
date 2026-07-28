@@ -14,6 +14,7 @@ const USER = {
   displayName: "Sam",
   createdAt: new Date().toISOString(),
   allowLongVideos: false,
+  relatedVideosBetaEnabled: false,
 }
 
 describe("AuthContext", () => {
@@ -109,6 +110,27 @@ describe("AuthContext", () => {
     expect(api.patch).toHaveBeenCalledWith(
       "/api/auth/me",
       { allowLongVideos: true },
+      "new-token",
+    )
+  })
+
+  it("updates the related-videos beta flag independently", async () => {
+    vi.mocked(api.post).mockResolvedValue({ user: USER, token: "new-token" })
+    vi.mocked(api.patch).mockResolvedValue({
+      user: { ...USER, relatedVideosBetaEnabled: true },
+    })
+
+    const auth = new AuthContextPageObject()
+    await waitFor(() => expect(auth.loadingText).toBe("false"))
+    await auth.login()
+    await waitFor(() => expect(auth.userText).toBe("Sam"))
+
+    await auth.enableRelatedVideosBeta()
+
+    await waitFor(() => expect(auth.relatedVideosBetaText).toBe("true"))
+    expect(api.patch).toHaveBeenCalledWith(
+      "/api/auth/me",
+      { relatedVideosBetaEnabled: true },
       "new-token",
     )
   })

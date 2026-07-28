@@ -43,13 +43,13 @@ export async function getUserById(userId: string): Promise<User | null> {
   return prisma.user.findUnique({ where: { id: userId } })
 }
 
-export async function updateUserAllowLongVideos(
+export async function updateUserSettings(
   userId: string,
-  allowLongVideos: boolean,
+  settings: { allowLongVideos?: boolean; relatedVideosBetaEnabled?: boolean },
 ): Promise<User> {
   return prisma.user.update({
     where: { id: userId },
-    data: { allowLongVideos },
+    data: settings,
   })
 }
 

@@ -16,7 +16,7 @@ import {
   getUserById,
   loginUser,
   registerUser,
-  updateUserAllowLongVideos,
+  updateUserSettings,
 } from "../services/authService.js"
 import {
   GoogleAuthError,
@@ -131,16 +131,33 @@ authRouter.patch(
   "/auth/me",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const body = req.body as Partial<UpdateUserSettingsRequest>
-    if (typeof body.allowLongVideos !== "boolean") {
-      res.status(400).json({ error: "allowLongVideos must be a boolean" })
+    const body = req.body as UpdateUserSettingsRequest
+    const settings: { allowLongVideos?: boolean; relatedVideosBetaEnabled?: boolean } = {}
+
+    if (body.allowLongVideos !== undefined) {
+      if (typeof body.allowLongVideos !== "boolean") {
+        res.status(400).json({ error: "allowLongVideos must be a boolean" })
+        return
+      }
+      settings.allowLongVideos = body.allowLongVideos
+    }
+
+    if (body.relatedVideosBetaEnabled !== undefined) {
+      if (typeof body.relatedVideosBetaEnabled !== "boolean") {
+        res
+          .status(400)
+          .json({ error: "relatedVideosBetaEnabled must be a boolean" })
+        return
+      }
+      settings.relatedVideosBetaEnabled = body.relatedVideosBetaEnabled
+    }
+
+    if (Object.keys(settings).length === 0) {
+      res.status(400).json({ error: "No valid settings provided" })
       return
     }
 
-    const user = await updateUserAllowLongVideos(
-      req.userId as string,
-      body.allowLongVideos,
-    )
+    const user = await updateUserSettings(req.userId as string, settings)
     res.json({ user: serializeUser(user) })
   }),
 )

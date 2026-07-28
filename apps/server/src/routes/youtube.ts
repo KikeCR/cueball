@@ -15,6 +15,7 @@ import {
 import {
   isYoutubeDataApiConfigured,
   searchYoutubeVideos,
+  YoutubeQuotaExceededError,
 } from "../services/youtube.js"
 import {
   exchangeCodeForTokens,
@@ -130,7 +131,16 @@ youtubeRouter.get(
       return
     }
 
-    const results = await searchYoutubeVideos(query)
+    let results
+    try {
+      results = await searchYoutubeVideos(query)
+    } catch (err) {
+      if (err instanceof YoutubeQuotaExceededError) {
+        res.status(429).json({ error: err.message })
+        return
+      }
+      throw err
+    }
     await setCachedSearchResults(query, results)
     res.json({ results } satisfies YoutubeSearchResponse)
   }),

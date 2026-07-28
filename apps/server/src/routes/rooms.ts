@@ -16,6 +16,7 @@ import {
   createRoomWithHost,
   findDeletableRoom,
   getRoomByCode,
+  roomAllowsRelatedVideos,
 } from "../services/roomService.js"
 import { serializeParticipant, serializeRoom } from "../services/serializers.js"
 import { signParticipantToken } from "../services/tokens.js"
@@ -58,7 +59,10 @@ roomsRouter.post(
     const participantToken = signParticipantToken(participant.id, room.id)
 
     const response: CreateRoomResponse = {
-      room: serializeRoom(room),
+      room: {
+        ...serializeRoom(room),
+        relatedVideosEnabled: await roomAllowsRelatedVideos(room.hostUserId),
+      },
       participant: serializeParticipant(participant, true),
       participantToken,
     }

@@ -7,6 +7,7 @@ import {
   type ActionOk,
   type QueueAddPayload,
   type QueueClearResult,
+  type QueueRelatedResult,
   type QueueRemovePayload,
   type QueueReorderPayload,
   type QueueSetPlayedPayload,
@@ -26,13 +27,22 @@ import {
   isVideoAlreadyQueued,
   prepareQueueReorder,
 } from "../services/queueService.js"
-import { roomAllowsLongVideos } from "../services/roomService.js"
+import { getRoomState, roomAllowsLongVideos } from "../services/roomService.js"
 import {
+  buildRelatedVideosQuery,
   fetchVideoDurationSeconds,
   fetchVideoMetadata,
+  fetchVideoTagInfo,
   formatDurationClock,
+  isYoutubeDataApiConfigured,
   parseYoutubeVideoId,
+  searchYoutubeVideos,
 } from "../services/youtube.js"
+import {
+  getCachedSearchResults,
+  setCachedSearchResults,
+} from "../redis/youtubeSearchCache.js"
+import { isRelatedVideosQuotaHealthy } from "../redis/youtubeQuota.js"
 import { prisma } from "../services/prisma.js"
 import {
   addVideoToPlaylist,
@@ -189,6 +199,91 @@ export function registerQueueHandlers(io: Server): void {
               "Couldn't add that video to the TV's live queue.",
             )
           }
+        }
+      })()
+    })
+
+    // Triggered only by an explicit refresh click in the UI, never
+    // automatically off queue changes — search.list costs 100 quota units
+    // per call against a project-wide daily budget, so this can't run on
+    // every add/remove without exhausting it after a handful of active
+    // rooms.
+    socket.on(SocketEvents.QueueRelated, (
+      _payload: unknown,
+      ack?: (result: QueueRelatedResult | ActionError) => void,
+    ) => {
+      void (async () => {
+        const { roomId } = socket.data
+        if (!roomId) {
+          ack?.({ error: "Join a room before requesting related videos" })
+          return
+        }
+
+        if (!isYoutubeDataApiConfigured()) {
+          ack?.({ error: "YouTube search isn't configured on this server" })
+          return
+        }
+
+        // The frontend already hides this feature once quota runs low (see
+        // /api/config's youtubeQuotaHealthy), but that's a page-load-time
+        // snapshot — re-check here so a still-open tab can't keep spending
+        // quota past the safety threshold between page loads.
+        if (!(await isRelatedVideosQuotaHealthy())) {
+          ack?.({
+            error: "Related videos are temporarily unavailable to save YouTube API quota for search.",
+          })
+          return
+        }
+
+        const roomState = await getRoomState(roomId)
+        if (!roomState) {
+          ack?.({ error: "Room not found" })
+          return
+        }
+
+        // Gated on the room's original creator's own opt-in (like the long-
+        // video cap bypass), not the requesting participant's account — a
+        // promoted host who isn't the original creator, or a guest, doesn't
+        // change this room's behavior.
+        if (!roomState.room.relatedVideosEnabled) {
+          ack?.({ error: "Related videos aren't enabled for this room" })
+          return
+        }
+
+        const seedVideoIds = [
+          ...new Set(roomState.queue.map((item) => item.youtubeVideoId)),
+        ]
+        if (seedVideoIds.length === 0) {
+          ack?.({ results: [] } satisfies QueueRelatedResult)
+          return
+        }
+
+        try {
+          const tagInfo = await fetchVideoTagInfo(seedVideoIds)
+          const query = buildRelatedVideosQuery(tagInfo)
+          if (!query) {
+            ack?.({ results: [] } satisfies QueueRelatedResult)
+            return
+          }
+
+          let results = await getCachedSearchResults(query)
+          if (!results) {
+            results = await searchYoutubeVideos(query)
+            await setCachedSearchResults(query, results)
+          }
+
+          const alreadyQueued = new Set(seedVideoIds)
+          ack?.({
+            results: results.filter(
+              (result) => !alreadyQueued.has(result.videoId),
+            ),
+          } satisfies QueueRelatedResult)
+        } catch (err) {
+          console.error(
+            `Failed to fetch related videos for room ${roomId}`,
+            err,
+          )
+          ack?.({ error: "Couldn't fetch related videos right now" })
         }
       })()
     })

@@ -21,9 +21,11 @@ import {
   type PlaylistSyncFailedPayload,
   type QueueClearResult,
   type QueueItem,
+  type QueueRelatedResult,
   type Room,
   type RoomJoinResult,
   type RoomStatePayload,
+  type YoutubeSearchResult,
 } from "@cueball/shared"
 import {
   clearParticipantToken,
@@ -88,6 +90,7 @@ interface RoomContextValue {
   setQueueItemPlayed: (queueItemId: string, played: boolean) => Promise<void>
   clearQueue: () => Promise<QueueClearResult>
   clearHistory: () => Promise<void>
+  fetchRelatedVideos: () => Promise<YoutubeSearchResult[]>
   setRepeat: (enabled: boolean) => Promise<void>
   removeParticipant: (participantId: string) => Promise<void>
   promoteParticipant: (participantId: string) => Promise<void>
@@ -324,6 +327,29 @@ export function RoomProvider({
     [],
   )
 
+  const fetchRelatedVideos = useCallback(
+    () =>
+      new Promise<YoutubeSearchResult[]>((resolve, reject) => {
+        const socket = socketRef.current
+        if (!socket) {
+          reject(new Error("Not connected"))
+          return
+        }
+        socket.emit(
+          SocketEvents.QueueRelated,
+          {},
+          (result: QueueRelatedResult | ActionError) => {
+            if ("error" in result) {
+              reject(new Error(result.error))
+              return
+            }
+            resolve(result.results)
+          },
+        )
+      }),
+    [],
+  )
+
   const setRepeat = useCallback(
     (enabled: boolean) =>
       emitAction(socketRef.current, SocketEvents.RoomSetRepeat, { enabled }),
@@ -390,6 +416,7 @@ export function RoomProvider({
         setQueueItemPlayed,
         clearQueue,
         clearHistory,
+        fetchRelatedVideos,
         setRepeat,
         removeParticipant,
         promoteParticipant,

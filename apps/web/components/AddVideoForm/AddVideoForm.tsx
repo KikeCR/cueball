@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Loader2, Plus, X } from "lucide-react"
 import type { YoutubeSearchResponse, YoutubeSearchResult } from "@cueball/shared"
-import { api } from "../../api/client"
+import { api, ApiError } from "../../api/client"
 import { useRoom } from "../../context/RoomContext"
 import { useToast } from "../../context/ToastContext"
 import { Button } from "../ui/button"
@@ -24,6 +24,9 @@ export function AddVideoForm() {
   const [results, setResults] = useState<YoutubeSearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const [dismissed, setDismissed] = useState(false)
+  const [searchUnavailableMessage, setSearchUnavailableMessage] = useState<
+    string | null
+  >(null)
   const requestIdRef = useRef(0)
   const containerRef = useRef<HTMLFormElement>(null)
 
@@ -37,6 +40,7 @@ export function AddVideoForm() {
     if (!query || looksLikeUrl(query) || query.length < MIN_SEARCH_QUERY_LENGTH) {
       setResults([])
       setSearching(false)
+      setSearchUnavailableMessage(null)
       return
     }
 
@@ -48,12 +52,18 @@ export function AddVideoForm() {
         .then((response) => {
           if (requestIdRef.current !== requestId) return
           setResults(response.results)
+          setSearchUnavailableMessage(null)
         })
-        .catch(() => {
-          // Best-effort enhancement: a search failing (unconfigured server,
-          // quota exhausted, network hiccup) shouldn't interrupt typing with
-          // an error toast — pasting a direct link still works regardless.
-          if (requestIdRef.current === requestId) setResults([])
+        .catch((err) => {
+          if (requestIdRef.current !== requestId) return
+          setResults([])
+          // A 429 means the server's daily YouTube quota is exhausted — that's
+          // worth surfacing (people were confused when search just silently
+          // stopped working), unlike an ordinary hiccup (unconfigured server,
+          // network blip), which stays silent rather than interrupting typing.
+          setSearchUnavailableMessage(
+            err instanceof ApiError && err.status === 429 ? err.message : null,
+          )
         })
         .finally(() => {
           if (requestIdRef.current === requestId) setSearching(false)
@@ -79,6 +89,7 @@ export function AddVideoForm() {
   const handleClearSearch = () => {
     setYoutubeUrl("")
     setResults([])
+    setSearchUnavailableMessage(null)
     setDismissed(false)
   }
 
@@ -114,7 +125,9 @@ export function AddVideoForm() {
     }
   }
 
-  const showDropdown = !dismissed && (results.length > 0 || searching)
+  const showDropdown =
+    !dismissed &&
+    (results.length > 0 || searching || Boolean(searchUnavailableMessage))
 
   return (
     <form
@@ -168,6 +181,14 @@ export function AddVideoForm() {
           {searching && results.length === 0 && (
             <li className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted">
               <Loader2 className="size-3.5 animate-spin" /> Searching…
+            </li>
+          )}
+          {!searching && searchUnavailableMessage && (
+            <li
+              role="alert"
+              className="px-2 py-1.5 text-xs text-muted"
+            >
+              {searchUnavailableMessage}
             </li>
           )}
           {results.map((result) => (

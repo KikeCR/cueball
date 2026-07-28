@@ -25,7 +25,7 @@ import {
   getUserById,
   loginUser,
   registerUser,
-  updateUserAllowLongVideos,
+  updateUserSettings,
 } from "./authService.js"
 
 const EXISTING_USER = {
@@ -148,20 +148,38 @@ describe("findOrCreateGoogleUser", () => {
   })
 })
 
-describe("updateUserAllowLongVideos", () => {
-  it("updates the flag for the given user", async () => {
+describe("updateUserSettings", () => {
+  it("updates only the fields passed in", async () => {
     vi.mocked(prisma.user.update).mockResolvedValue({
       ...EXISTING_USER,
       allowLongVideos: true,
     } as never)
 
-    const user = await updateUserAllowLongVideos("user-1", true)
+    const user = await updateUserSettings("user-1", { allowLongVideos: true })
 
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { allowLongVideos: true },
     })
     expect(user.allowLongVideos).toBe(true)
+  })
+
+  it("can update multiple settings at once", async () => {
+    vi.mocked(prisma.user.update).mockResolvedValue({
+      ...EXISTING_USER,
+      allowLongVideos: true,
+      relatedVideosBetaEnabled: true,
+    } as never)
+
+    await updateUserSettings("user-1", {
+      allowLongVideos: true,
+      relatedVideosBetaEnabled: true,
+    })
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { allowLongVideos: true, relatedVideosBetaEnabled: true },
+    })
   })
 })
 

@@ -1,5 +1,15 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
 
+/** Same as Error, but keeps the HTTP status around so callers can distinguish e.g. a 429 quota response from an ordinary failure without parsing the message text. */
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+  }
+}
+
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>
 }
@@ -22,7 +32,7 @@ async function request<T>(
       body && typeof body.error === "string"
         ? body.error
         : `Request failed (${res.status})`
-    throw new Error(message)
+    throw new ApiError(message, res.status)
   }
 
   if (res.status === 204) return undefined as T

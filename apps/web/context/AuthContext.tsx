@@ -8,7 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import type { AuthResponse, AuthUser } from "@cueball/shared"
+import type {
+  AuthResponse,
+  AuthUser,
+  UpdateUserSettingsRequest,
+} from "@cueball/shared"
 import { api } from "../api/client"
 import {
   clearUserToken,
@@ -25,7 +29,7 @@ interface AuthContextValue {
   /** Adopts a token issued out-of-band, e.g. redirected back from Google sign-in. */
   applyToken: (token: string) => Promise<void>
   logout: () => void
-  updateSettings: (settings: { allowLongVideos: boolean }) => Promise<void>
+  updateSettings: (settings: UpdateUserSettingsRequest) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -89,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const updateSettings = useCallback(
-    async (settings: { allowLongVideos: boolean }) => {
+    async (settings: UpdateUserSettingsRequest) => {
       if (!token) throw new Error("Not signed in")
       const data = await api.patch<{ user: AuthUser }>(
         "/api/auth/me",

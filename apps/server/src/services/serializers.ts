@@ -14,7 +14,13 @@ import {
 } from "@cueball/shared"
 import type { QueueItemWithVotes } from "./queueService.js"
 
-export function serializeRoom(room: PrismaRoom): Room {
+/**
+ * Omits `relatedVideosEnabled` — that field depends on an async lookup of
+ * the room's original host's own settings (see roomAllowsRelatedVideos),
+ * which this function deliberately stays synchronous and independent of.
+ * Callers merge it in themselves.
+ */
+export function serializeRoom(room: PrismaRoom): Omit<Room, "relatedVideosEnabled"> {
   return {
     id: room.id,
     code: room.code,
@@ -36,6 +42,7 @@ export function serializeUser(user: PrismaUser): AuthUser {
     displayName: user.displayName,
     createdAt: user.createdAt.toISOString(),
     allowLongVideos: user.allowLongVideos,
+    relatedVideosBetaEnabled: user.relatedVideosBetaEnabled,
   }
 }
 

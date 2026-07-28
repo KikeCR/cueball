@@ -18,6 +18,10 @@ model User {
   // the 12-minute video length cap, for anyone adding to that room.
   allowLongVideos Boolean @default(false)
 
+  // Opt-in to the related-videos section in rooms (beta) — off by default
+  // since it spends YouTube search quota.
+  relatedVideosBetaEnabled Boolean @default(false)
+
   hostedRooms  Room[]        @relation("RoomHost")
   participants Participant[]
 

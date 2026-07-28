@@ -88,6 +88,24 @@ export async function roomAllowsLongVideos(
 }
 
 /**
+ * Same "original creator only" rule as roomAllowsLongVideos — the
+ * related-videos section is gated on the room's original host's own
+ * opt-in, not any currently-viewing participant's account (including a
+ * promoted host who isn't the original creator), so a room's behavior
+ * doesn't change depending on who happens to be looking at it.
+ */
+export async function roomAllowsRelatedVideos(
+  hostUserId: string | null,
+): Promise<boolean> {
+  if (!hostUserId) return false
+  const host = await prisma.user.findUnique({
+    where: { id: hostUserId },
+    select: { relatedVideosBetaEnabled: true },
+  })
+  return host?.relatedVideosBetaEnabled ?? false
+}
+
+/**
  * Joins a room. For an authenticated user, this reuses their existing
  * participant row for this room (if any) instead of creating a duplicate, so
  * the same account joining from a second device or tab reconnects as the
@@ -406,8 +424,9 @@ export async function getRoomState(roomId: string) {
 
   const connected = await getConnectedParticipantIds(roomId)
   const cast = await getCastState(roomId)
+  const relatedVideosEnabled = await roomAllowsRelatedVideos(room.hostUserId)
   return {
-    room: serializeRoom(room),
+    room: { ...serializeRoom(room), relatedVideosEnabled },
     participants: room.participants.map((p) =>
       serializeParticipant(p, connected.has(p.id)),
     ),

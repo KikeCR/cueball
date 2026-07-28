@@ -38,6 +38,7 @@ import {
   removeParticipant,
   renameParticipant,
   roomAllowsLongVideos,
+  roomAllowsRelatedVideos,
   setRoomName,
   setRoomRepeat,
   sortQueueItems,
@@ -725,5 +726,42 @@ describe("roomAllowsLongVideos", () => {
     vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
 
     expect(await roomAllowsLongVideos("deleted-user")).toBe(false)
+  })
+})
+
+describe("roomAllowsRelatedVideos", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.user.findUnique).mockReset()
+  })
+
+  it("returns false when the room has no original host (guest-created)", async () => {
+    expect(await roomAllowsRelatedVideos(null)).toBe(false)
+    expect(prisma.user.findUnique).not.toHaveBeenCalled()
+  })
+
+  it("returns the original host's own preference", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      relatedVideosBetaEnabled: true,
+    } as never)
+
+    expect(await roomAllowsRelatedVideos("user-1")).toBe(true)
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      select: { relatedVideosBetaEnabled: true },
+    })
+  })
+
+  it("returns false when the original host's own preference is off, regardless of a promoted host", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      relatedVideosBetaEnabled: false,
+    } as never)
+
+    expect(await roomAllowsRelatedVideos("user-1")).toBe(false)
+  })
+
+  it("returns false if the host account no longer exists", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue(null)
+
+    expect(await roomAllowsRelatedVideos("deleted-user")).toBe(false)
   })
 })

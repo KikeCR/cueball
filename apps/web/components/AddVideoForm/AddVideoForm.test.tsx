@@ -1,6 +1,7 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AddVideoFormPageObject } from "../../test/page-objects/AddVideoFormPageObject"
+import { ApiError } from "../../api/client"
 
 const addToQueueMock = vi.fn()
 const toastSuccessMock = vi.fn()
@@ -15,9 +16,13 @@ vi.mock("../../context/ToastContext", () => ({
   useToast: () => ({ success: toastSuccessMock, error: toastErrorMock }),
 }))
 
-vi.mock("../../api/client", () => ({
-  api: { get: (...args: unknown[]) => apiGetMock(...args) },
-}))
+vi.mock("../../api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/client")>()
+  return {
+    ...actual,
+    api: { get: (...args: unknown[]) => apiGetMock(...args) },
+  }
+})
 
 describe("AddVideoForm", () => {
   beforeEach(() => {
@@ -172,8 +177,8 @@ describe("AddVideoForm", () => {
     expect(form.linkInput).toHaveValue("some song")
   }, 10000)
 
-  it("silently drops a failed search instead of toasting an error", async () => {
-    apiGetMock.mockRejectedValue(new Error("quota exceeded"))
+  it("silently drops an ordinary failed search instead of toasting an error", async () => {
+    apiGetMock.mockRejectedValue(new Error("network hiccup"))
     const form = new AddVideoFormPageObject()
 
     await form.fillLink("some song")
@@ -182,6 +187,26 @@ describe("AddVideoForm", () => {
       timeout: 2000,
     })
     await waitFor(() => expect(form.searchingIndicator).not.toBeInTheDocument())
+    expect(toastErrorMock).not.toHaveBeenCalled()
+    expect(form.searchUnavailableAlert).not.toBeInTheDocument()
+  }, 10000)
+
+  it("shows an inline message (not a toast) when the daily quota is exhausted", async () => {
+    apiGetMock.mockRejectedValue(
+      new ApiError(
+        "YouTube's daily search limit has been reached. Try again tomorrow.",
+        429,
+      ),
+    )
+    const form = new AddVideoFormPageObject()
+
+    await form.fillLink("some song")
+
+    await waitFor(() =>
+      expect(form.searchUnavailableAlert).toHaveTextContent(
+        "YouTube's daily search limit has been reached. Try again tomorrow.",
+      ),
+    )
     expect(toastErrorMock).not.toHaveBeenCalled()
   }, 10000)
 })

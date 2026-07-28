@@ -13,6 +13,8 @@ export interface Room {
   manualQueueOrder: boolean
   repeatEnabled: boolean
   createdAt: string
+  /** True only when the room's original creator (hostUserId) has related-videos beta enabled on their account — not any other current host's setting. */
+  relatedVideosEnabled: boolean
 }
 
 export interface CastSessionState {
@@ -77,6 +79,8 @@ export interface AuthUser {
   createdAt: string
   /** When on, any room this account originally created skips the video length cap, for anyone adding to it. */
   allowLongVideos: boolean
+  /** Opt-in to the related-videos section in rooms (beta) — off by default since it spends YouTube search quota. */
+  relatedVideosBetaEnabled: boolean
 }
 
 export interface RoomHistoryEntry {
