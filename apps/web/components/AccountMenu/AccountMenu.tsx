@@ -3,11 +3,26 @@
 import Link from "next/link"
 import { LogOut, User } from "lucide-react"
 import { useAuth } from "../../context/AuthContext"
+import { Spinner } from "../ui/spinner"
 
 export function AccountMenu() {
   const { user, loading, logout } = useAuth()
 
-  if (loading) return null
+  if (loading) {
+    // Same footprint as the "Sign in" pill below, so there's no layout
+    // shift once the real state settles — just a blank gap here would be
+    // easy to miss on a fast connection, but a cold app-launch (e.g. an
+    // iOS home-screen icon, which has no cached JS bundle to warm up from)
+    // can leave this loading for long enough to be noticeable.
+    return (
+      <div
+        aria-label="Loading account"
+        className="inline-flex h-9 items-center justify-center rounded-full border border-border bg-surface px-3"
+      >
+        <Spinner className="size-3.5 text-muted" />
+      </div>
+    )
+  }
 
   if (!user) {
     return (
