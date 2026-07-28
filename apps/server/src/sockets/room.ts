@@ -5,6 +5,7 @@ import {
   SocketEvents,
   type ActionError,
   type ActionOk,
+  type ParticipantPromotePayload,
   type ParticipantRemovePayload,
   type ParticipantRemovedPayload,
   type ParticipantRenamePayload,
@@ -17,6 +18,7 @@ import {
 import {
   addParticipant,
   getRoomState,
+  promoteParticipant,
   removeParticipant,
   renameParticipant,
   setRoomName,
@@ -169,6 +171,35 @@ export function registerRoomHandlers(io: Server): void {
               reason: "You were removed from this room by the host",
             } satisfies ParticipantRemovedPayload)
             remote.disconnect(true)
+          }
+
+          ack?.({ ok: true })
+          await broadcastRoomState(io, roomId)
+        })()
+      },
+    )
+
+    socket.on(
+      SocketEvents.ParticipantPromote,
+      (
+        payload: ParticipantPromotePayload,
+        ack?: (result: ActionOk | ActionError) => void,
+      ) => {
+        void (async () => {
+          const { participantId: requesterId, roomId } = socket.data
+          if (!requesterId || !roomId) {
+            ack?.({ error: "Join a room first" })
+            return
+          }
+
+          const result = await promoteParticipant({
+            roomId,
+            requesterId,
+            targetId: payload.participantId,
+          })
+          if ("error" in result) {
+            ack?.({ error: result.error })
+            return
           }
 
           ack?.({ ok: true })

@@ -9,6 +9,7 @@ interface ParticipantListProps {
   isSelfHost?: boolean
   onRemove?: (participantId: string) => void
   onRename?: (name: string) => void
+  onPromote?: (participantId: string) => void
 }
 
 export class ParticipantListPageObject {
@@ -45,6 +46,16 @@ export class ParticipantListPageObject {
   async clickRemove(name: string) {
     const button = this.removeButton(name)
     if (!button) throw new Error(`Remove button for ${name} is not rendered`)
+    await this.user.click(button)
+  }
+
+  promoteButton(name: string) {
+    return screen.queryByRole("button", { name: `Make ${name} a host` })
+  }
+
+  async clickPromote(name: string) {
+    const button = this.promoteButton(name)
+    if (!button) throw new Error(`Promote button for ${name} is not rendered`)
     await this.user.click(button)
   }
 

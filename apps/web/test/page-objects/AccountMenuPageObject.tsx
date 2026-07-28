@@ -15,6 +15,10 @@ export class AccountMenuPageObject {
     return screen.queryByRole("link", { name: "Sign in" })
   }
 
+  get loadingPlaceholder() {
+    return screen.queryByLabelText("Loading account")
+  }
+
   get signOutButton() {
     return screen.queryByRole("button", { name: "Sign out" })
   }

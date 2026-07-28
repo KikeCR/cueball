@@ -14,6 +14,10 @@ model User {
   displayName  String
   createdAt    DateTime @default(now())
 
+  // When on, any room this account originally created (Room.hostUserId) skips
+  // the 12-minute video length cap, for anyone adding to that room.
+  allowLongVideos Boolean @default(false)
+
   hostedRooms  Room[]        @relation("RoomHost")
   participants Participant[]
 

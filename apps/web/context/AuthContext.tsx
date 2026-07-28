@@ -25,6 +25,7 @@ interface AuthContextValue {
   /** Adopts a token issued out-of-band, e.g. redirected back from Google sign-in. */
   applyToken: (token: string) => Promise<void>
   logout: () => void
+  updateSettings: (settings: { allowLongVideos: boolean }) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -87,6 +88,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  const updateSettings = useCallback(
+    async (settings: { allowLongVideos: boolean }) => {
+      if (!token) throw new Error("Not signed in")
+      const data = await api.patch<{ user: AuthUser }>(
+        "/api/auth/me",
+        settings,
+        token,
+      )
+      setUser(data.user)
+    },
+    [token],
+  )
+
   return (
     <AuthContext.Provider
       value={{
@@ -97,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         applyToken,
         logout,
+        updateSettings,
       }}
     >
       {children}

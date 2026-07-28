@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
+import { MAX_VIDEO_DURATION_SECONDS } from "@cueball/shared"
 import { useAuth } from "../../context/AuthContext"
 import { useToast } from "../../context/ToastContext"
 import { LoginForm } from "../../components/LoginForm"
@@ -13,6 +14,7 @@ import { RoomHistoryList } from "../../components/RoomHistoryList"
 import { Card } from "../../components/ui/card"
 import { Button } from "../../components/ui/button"
 import { Spinner } from "../../components/ui/spinner"
+import { Switch } from "../../components/ui/switch"
 
 type Tab = "login" | "register"
 
@@ -60,10 +62,19 @@ function GoogleCallbackHandler({
 }
 
 export default function AccountPage() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading, logout, updateSettings } = useAuth()
+  const toast = useToast()
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("login")
   const [exchangingToken, setExchangingToken] = useState(false)
+
+  const handleToggleAllowLongVideos = (allowLongVideos: boolean) => {
+    updateSettings({ allowLongVideos }).catch((err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update setting",
+      ),
+    )
+  }
 
   const callbackHandler = (
     <Suspense fallback={null}>
@@ -146,6 +157,23 @@ export default function AccountPage() {
           <Button variant="ghost" onClick={logout} className="mt-2 self-start">
             Sign out
           </Button>
+        </Card>
+
+        <Card className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold">Allow long videos</h2>
+              <p className="text-xs text-muted">
+                Skips the {MAX_VIDEO_DURATION_SECONDS / 60}-minute video
+                length limit in rooms you create.
+              </p>
+            </div>
+            <Switch
+              checked={user.allowLongVideos}
+              onChange={handleToggleAllowLongVideos}
+              label="Allow long videos"
+            />
+          </div>
         </Card>
 
         <Card className="flex flex-col gap-3">

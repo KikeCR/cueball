@@ -71,6 +71,23 @@ export async function getRoomByCode(code: string): Promise<Room | null> {
 }
 
 /**
+ * The 12-minute video length cap is skipped for a room if the account that
+ * originally created it (Room.hostUserId) turned that on in their profile —
+ * a promoted co-host's own preference doesn't count, only the room's
+ * original owner's, same as room deletion rights.
+ */
+export async function roomAllowsLongVideos(
+  hostUserId: string | null,
+): Promise<boolean> {
+  if (!hostUserId) return false
+  const host = await prisma.user.findUnique({
+    where: { id: hostUserId },
+    select: { allowLongVideos: true },
+  })
+  return host?.allowLongVideos ?? false
+}
+
+/**
  * Joins a room. For an authenticated user, this reuses their existing
  * participant row for this room (if any) instead of creating a duplicate, so
  * the same account joining from a second device or tab reconnects as the
@@ -157,6 +174,48 @@ export async function removeParticipant(params: {
   await prisma.participant.delete({ where: { id: target.id } })
   await touchRoomActivity(params.roomId)
   return { removed: target }
+}
+
+export type PromoteParticipantResult =
+  | { promoted: Participant }
+  | { error: string }
+
+/**
+ * Any current host can promote another participant to host too — rooms can
+ * have more than one. This only grants everyday in-room host actions
+ * (remove participants, reorder/clear the queue, rename the room, etc.);
+ * it doesn't touch Room.hostUserId, so deleting the room and its YouTube
+ * playlist stays restricted to whoever originally created it (see
+ * findDeletableRoom).
+ */
+export async function promoteParticipant(params: {
+  roomId: string
+  requesterId: string
+  targetId: string
+}): Promise<PromoteParticipantResult> {
+  const requester = await prisma.participant.findUnique({
+    where: { id: params.requesterId },
+  })
+  if (!requester || requester.roomId !== params.roomId || !requester.isHost) {
+    return { error: "Only the host can promote participants" }
+  }
+
+  const target = await prisma.participant.findFirst({
+    where: { id: params.targetId, roomId: params.roomId },
+  })
+  if (!target) {
+    return { error: "Participant not found in this room" }
+  }
+  if (target.isHost) {
+    return { promoted: target }
+  }
+
+  const promoted = await prisma.participant.update({
+    where: { id: target.id },
+    data: { isHost: true },
+  })
+  await touchRoomActivity(params.roomId)
+  return { promoted }
 }
 
 /** Marks a room as recently used, so the expiry sweep leaves it alone. */

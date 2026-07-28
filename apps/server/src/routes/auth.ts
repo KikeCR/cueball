@@ -6,6 +6,7 @@ import {
   type LoginRequest,
   type RegisterRequest,
   type RoomHistoryResponse,
+  type UpdateUserSettingsRequest,
 } from "@cueball/shared"
 import { asyncHandler } from "../lib/asyncHandler.js"
 import { requireAuth } from "../middleware/auth.js"
@@ -15,6 +16,7 @@ import {
   getUserById,
   loginUser,
   registerUser,
+  updateUserAllowLongVideos,
 } from "../services/authService.js"
 import {
   GoogleAuthError,
@@ -121,6 +123,24 @@ authRouter.get(
       res.status(401).json({ error: "Authentication required" })
       return
     }
+    res.json({ user: serializeUser(user) })
+  }),
+)
+
+authRouter.patch(
+  "/auth/me",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const body = req.body as Partial<UpdateUserSettingsRequest>
+    if (typeof body.allowLongVideos !== "boolean") {
+      res.status(400).json({ error: "allowLongVideos must be a boolean" })
+      return
+    }
+
+    const user = await updateUserAllowLongVideos(
+      req.userId as string,
+      body.allowLongVideos,
+    )
     res.json({ user: serializeUser(user) })
   }),
 )

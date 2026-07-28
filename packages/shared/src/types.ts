@@ -75,6 +75,8 @@ export interface AuthUser {
   email: string
   displayName: string
   createdAt: string
+  /** When on, any room this account originally created skips the video length cap, for anyone adding to it. */
+  allowLongVideos: boolean
 }
 
 export interface RoomHistoryEntry {

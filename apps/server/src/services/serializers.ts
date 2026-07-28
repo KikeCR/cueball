@@ -35,6 +35,7 @@ export function serializeUser(user: PrismaUser): AuthUser {
     email: user.email ?? "",
     displayName: user.displayName,
     createdAt: user.createdAt.toISOString(),
+    allowLongVideos: user.allowLongVideos,
   }
 }
 

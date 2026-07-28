@@ -43,6 +43,16 @@ export async function getUserById(userId: string): Promise<User | null> {
   return prisma.user.findUnique({ where: { id: userId } })
 }
 
+export async function updateUserAllowLongVideos(
+  userId: string,
+  allowLongVideos: boolean,
+): Promise<User> {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { allowLongVideos },
+  })
+}
+
 /** Signs in an existing account by email, or creates a passwordless one for a first-time Google login. */
 export async function findOrCreateGoogleUser(params: {
   email: string

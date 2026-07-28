@@ -4,13 +4,17 @@ import userEvent from "@testing-library/user-event"
 import { AuthProvider, useAuth } from "../../context/AuthContext"
 
 function Probe() {
-  const { user, loading, register, login, applyToken, logout } = useAuth()
+  const { user, loading, register, login, applyToken, logout, updateSettings } =
+    useAuth()
   const [applyTokenError, setApplyTokenError] = useState<string | null>(null)
 
   return (
     <div>
       <span data-testid="loading">{String(loading)}</span>
       <span data-testid="user">{user ? user.displayName : "none"}</span>
+      <span data-testid="allow-long-videos">
+        {user ? String(user.allowLongVideos) : "none"}
+      </span>
       <span data-testid="apply-token-error">{applyTokenError ?? "none"}</span>
       <button onClick={() => login("sam@example.com", "password123")}>
         login
@@ -29,6 +33,9 @@ function Probe() {
         }}
       >
         apply-token
+      </button>
+      <button onClick={() => void updateSettings({ allowLongVideos: true })}>
+        enable-long-videos
       </button>
       <button onClick={logout}>logout</button>
     </div>
@@ -58,8 +65,16 @@ export class AuthContextPageObject {
     return screen.getByTestId("apply-token-error").textContent
   }
 
+  get allowLongVideosText() {
+    return screen.getByTestId("allow-long-videos").textContent
+  }
+
   async login() {
     await this.user.click(screen.getByText("login"))
+  }
+
+  async enableLongVideos() {
+    await this.user.click(screen.getByText("enable-long-videos"))
   }
 
   async register() {

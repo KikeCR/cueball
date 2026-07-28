@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Check, Pencil, X } from "lucide-react"
+import { Check, Pencil, Star, X } from "lucide-react"
 import { MAX_NAME_LENGTH, type ParticipantWithPresence } from "@cueball/shared"
 import { cn } from "../../utils/cn"
 import { Badge } from "../ui/badge"
@@ -10,6 +10,7 @@ interface ParticipantListProps {
   isSelfHost?: boolean
   onRemove?: (participantId: string) => void
   onRename?: (name: string) => void
+  onPromote?: (participantId: string) => void
 }
 
 export function ParticipantList({
@@ -18,6 +19,7 @@ export function ParticipantList({
   isSelfHost = false,
   onRemove,
   onRename,
+  onPromote,
 }: ParticipantListProps) {
   const [editingName, setEditingName] = useState<string | null>(null)
 
@@ -43,6 +45,8 @@ export function ParticipantList({
         const isSelf = participant.id === selfId
         const canRemove = isSelfHost && !isSelf && Boolean(onRemove)
         const canRename = isSelf && Boolean(onRename)
+        const canPromote =
+          isSelfHost && !participant.isHost && Boolean(onPromote)
         const isEditing = canRename && editingName !== null
 
         return (
@@ -105,6 +109,17 @@ export function ParticipantList({
                     className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-text"
                   >
                     <Pencil className="size-4" />
+                  </button>
+                )}
+                {canPromote && (
+                  <button
+                    type="button"
+                    aria-label={`Make ${name} a host`}
+                    title="Make host"
+                    onClick={() => onPromote?.(participant.id)}
+                    className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-primary/15 hover:text-primary"
+                  >
+                    <Star className="size-4" />
                   </button>
                 )}
                 {canRemove && (

@@ -17,10 +17,11 @@ describe("AccountMenu", () => {
     mockState = { user: null, loading: false }
   })
 
-  it("renders nothing while the session is loading", () => {
+  it("shows a same-sized placeholder while the session is loading, not a blank gap", () => {
     mockState = { user: null, loading: true }
     const menu = new AccountMenuPageObject()
-    expect(menu.container).toBeEmptyDOMElement()
+    expect(menu.container).not.toBeEmptyDOMElement()
+    expect(menu.loadingPlaceholder).toBeInTheDocument()
   })
 
   it("shows a sign in link when logged out", () => {
