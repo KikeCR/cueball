@@ -12,6 +12,7 @@ import {
   fetchVideoMetadata,
   fetchVideoTagInfo,
   formatDurationClock,
+  groupVideosByTagCluster,
   isYoutubeDataApiConfigured,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
@@ -473,5 +474,87 @@ describe("buildRelatedVideosQuery", () => {
     const videos = [video({ title: "In the of a to HD 4K" })]
 
     expect(buildRelatedVideosQuery(videos)).toBe("")
+  })
+})
+
+describe("groupVideosByTagCluster", () => {
+  function video(overrides: Partial<VideoTagInfo> = {}): VideoTagInfo {
+    return {
+      videoId: `video-${Math.random()}`,
+      title: "Some Video",
+      tags: [],
+      ...overrides,
+    }
+  }
+
+  it("returns nothing for no videos", () => {
+    expect(groupVideosByTagCluster([])).toEqual([])
+  })
+
+  it("splits a genre-mixed queue into a query per genre instead of one blended query", () => {
+    const cityPop = [
+      video({ videoId: "v1", tags: ["City Pop", "Tatsuro Yamashita"] }),
+      video({ videoId: "v2", tags: ["City Pop", "Mariya Takeuchi"] }),
+      video({ videoId: "v3", tags: ["City Pop", "Anri"] }),
+    ]
+    const indieRock = [
+      video({ videoId: "v4", tags: ["Indie Rock", "Arctic Monkeys"] }),
+      video({ videoId: "v5", tags: ["Indie Rock", "The Last Shadow Puppets"] }),
+    ]
+
+    const groups = groupVideosByTagCluster([...cityPop, ...indieRock])
+
+    expect(groups).toHaveLength(2)
+    expect(groups.map((g) => g.query)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("city pop"),
+        expect.stringContaining("indie rock"),
+      ]),
+    )
+  })
+
+  it("caps at 3 groups even with more distinct clusters", () => {
+    const clusters = ["a", "b", "c", "d"].map((tag) => [
+      video({ tags: [tag] }),
+      video({ tags: [tag] }),
+    ])
+    const videos = clusters.flat()
+
+    expect(groupVideosByTagCluster(videos)).toHaveLength(3)
+  })
+
+  it("doesn't cluster on a tag only one video has", () => {
+    const videos = [
+      video({ videoId: "v1", tags: ["unique-to-v1"] }),
+      video({ videoId: "v2", tags: ["unique-to-v2"] }),
+    ]
+
+    // Neither tag is shared, so both videos fall through to one catch-all
+    // group instead of (incorrectly) being split by a non-shared tag.
+    expect(groupVideosByTagCluster(videos)).toHaveLength(1)
+  })
+
+  it("bundles ungrouped leftovers into one final catch-all group", () => {
+    const shared = [
+      video({ videoId: "v1", tags: ["shared"] }),
+      video({ videoId: "v2", tags: ["shared"] }),
+    ]
+    const leftover = video({ videoId: "v3", tags: ["solo-tag"] })
+
+    const groups = groupVideosByTagCluster([...shared, leftover])
+
+    expect(groups).toHaveLength(2)
+  })
+
+  it("falls back to title words for a group with no usable tags", () => {
+    const videos = [
+      video({ title: "Amazing Live Performance", tags: [] }),
+      video({ title: "Amazing Studio Session", tags: [] }),
+    ]
+
+    const groups = groupVideosByTagCluster(videos)
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.query).toContain("amazing")
   })
 })
