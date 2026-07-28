@@ -188,11 +188,15 @@ interface SearchListResponse {
  */
 export async function searchYoutubeVideos(
   query: string,
+  options?: { videoCategoryId?: string },
 ): Promise<YoutubeSearchResult[]> {
   const apiKey = process.env.YOUTUBE_API_KEY
   if (!apiKey) return []
 
-  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=${encodeURIComponent(query)}&key=${apiKey}`
+  const categoryParam = options?.videoCategoryId
+    ? `&videoCategoryId=${encodeURIComponent(options.videoCategoryId)}`
+    : ""
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=${encodeURIComponent(query)}${categoryParam}&key=${apiKey}`
   const res = await fetch(url)
   await recordYoutubeQuotaUsage(QUOTA_COST_SEARCH_LIST)
   if (!res.ok) {
@@ -223,10 +227,15 @@ export interface VideoTagInfo {
   videoId: string
   title: string
   tags: string[]
+  /** YouTube's own category (e.g. "10" = Music) — same response, no extra quota cost to read it. */
+  categoryId: string | null
 }
 
 interface VideosListSnippetResponse {
-  items: Array<{ id: string; snippet: { title: string; tags?: string[] } }>
+  items: Array<{
+    id: string
+    snippet: { title: string; tags?: string[]; categoryId?: string }
+  }>
 }
 
 /**
@@ -251,6 +260,7 @@ export async function fetchVideoTagInfo(
     videoId: item.id,
     title: item.snippet.title,
     tags: item.snippet.tags ?? [],
+    categoryId: item.snippet.categoryId ?? null,
   }))
 }
 
@@ -308,9 +318,30 @@ export function buildRelatedVideosQuery(videos: VideoTagInfo[]): string {
 /** Each entry is a search.list-ready query representing one tag-cluster (or the catch-all remainder) — see groupVideosByTagCluster. */
 export interface RelatedVideoQueryGroup {
   query: string
+  /** Whichever category most of the group's videos share, if any — passed to search.list so e.g. a music room's suggestions stay music (not interviews, reaction clips, etc. about the same artist). */
+  videoCategoryId?: string
 }
 
 const MAX_RELATED_QUERY_GROUPS = 3
+
+/** Undefined (not filtered) unless a clear majority of the group actually shares one category. */
+function majorityCategoryId(videos: VideoTagInfo[]): string | undefined {
+  const counts = new Map<string, number>()
+  for (const video of videos) {
+    if (!video.categoryId) continue
+    counts.set(video.categoryId, (counts.get(video.categoryId) ?? 0) + 1)
+  }
+
+  let bestId: string | undefined
+  let bestCount = 0
+  for (const [id, count] of counts) {
+    if (count > bestCount) {
+      bestId = id
+      bestCount = count
+    }
+  }
+  return bestCount > videos.length / 2 ? bestId : undefined
+}
 
 /**
  * A room's queue is often a mix of genres/artists, not one coherent taste —
@@ -366,13 +397,61 @@ export function groupVideosByTagCluster(
     for (const video of clusterVideos) remaining.delete(video.videoId)
 
     const query = buildRelatedVideosQuery(clusterVideos)
-    if (query) groups.push({ query })
+    if (query) {
+      groups.push({ query, videoCategoryId: majorityCategoryId(clusterVideos) })
+    }
   }
 
   if (groups.length < MAX_RELATED_QUERY_GROUPS && remaining.size > 0) {
-    const query = buildRelatedVideosQuery([...remaining.values()])
-    if (query) groups.push({ query })
+    const leftover = [...remaining.values()]
+    const query = buildRelatedVideosQuery(leftover)
+    if (query) {
+      groups.push({ query, videoCategoryId: majorityCategoryId(leftover) })
+    }
   }
 
   return groups
+}
+
+/** Strips uploader decoration (brackets, punctuation, casing) down to a comparable "core" title. */
+export function normalizeTitleForDedup(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[[(【].*?[\])】]/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+}
+
+// Below this length, containment is too easy to satisfy by coincidence (a
+// short generic word matching part of an unrelated title) to trust as a
+// real match — only an exact match counts at that point.
+const MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH = 4
+
+/**
+ * True if two video titles most likely name the same underlying song/video
+ * — e.g. a different channel's re-upload with extra decoration in the title
+ * ("(FanMade Music Video)", "[Lyrics]", "(1982)", etc). Deliberately loose
+ * (substring containment after stripping bracketed noise and punctuation)
+ * rather than exact-match, since a re-upload keeps the core title as a
+ * literal substring far more often than it reproduces the original title
+ * verbatim.
+ *
+ * Can't bridge a title written in a different script/language for the same
+ * song (e.g. a romanized title vs. the same song's original-script title,
+ * or a translated one) — that needs real metadata, not text comparison, so
+ * those duplicates will still slip through.
+ */
+export function isLikelyDuplicateTitle(a: string, b: string): boolean {
+  const normalizedA = normalizeTitleForDedup(a)
+  const normalizedB = normalizeTitleForDedup(b)
+  if (!normalizedA || !normalizedB) return false
+  if (normalizedA === normalizedB) return true
+  if (
+    normalizedA.length < MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH ||
+    normalizedB.length < MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH
+  ) {
+    return false
+  }
+  return normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA)
 }
