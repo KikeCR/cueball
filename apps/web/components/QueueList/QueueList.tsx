@@ -195,27 +195,33 @@ export function QueueList({
                 </button>
               </div>
 
-              {canModerate && onSetPlayed && (
-                <button
-                  type="button"
-                  aria-label="Mark as played"
-                  onClick={() => onSetPlayed(item.id, true)}
-                  className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-upvote/15 hover:text-upvote"
-                >
-                  <Check className="size-4" />
-                </button>
+              {onSetPlayed && (
+                <div className="flex size-7 shrink-0 items-center justify-center">
+                  {canModerate && (
+                    <button
+                      type="button"
+                      aria-label="Mark as played"
+                      onClick={() => onSetPlayed(item.id, true)}
+                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-upvote/15 hover:text-upvote"
+                    >
+                      <Check className="size-4" />
+                    </button>
+                  )}
+                </div>
               )}
 
-              {canModerate && (
-                <button
-                  type="button"
-                  aria-label="Remove from queue"
-                  onClick={() => onRemove(item.id)}
-                  className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
-                >
-                  <X className="size-4" />
-                </button>
-              )}
+              <div className="flex size-7 shrink-0 items-center justify-center">
+                {canModerate && (
+                  <button
+                    type="button"
+                    aria-label="Remove from queue"
+                    onClick={() => onRemove(item.id)}
+                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+              </div>
             </QueueListItem>
           )
         })
