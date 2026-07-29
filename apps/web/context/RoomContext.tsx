@@ -37,6 +37,17 @@ import { decodeJwtPayload } from "../utils/jwt"
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
 const RECONNECT_TIMEOUT_MS = 4000
 
+// A reconnect forced after coming back from the background (see
+// VISIBILITY_RECONNECT_THRESHOLD_MS below) can't reuse the same tight
+// timeout as a fresh page load — a page load's handshake rides an
+// already-warm connection, but a phone waking a suspended app back up often
+// needs to re-establish the network itself first (cellular reconnecting,
+// DNS, TLS), which alone can take longer than RECONNECT_TIMEOUT_MS. Using
+// the short timeout here was wiping a perfectly valid participant token —
+// and kicking someone back to "enter your name" — just because the network
+// was still catching up, not because the room ever stopped recognizing them.
+const VISIBILITY_RECONNECT_TIMEOUT_MS = 12000
+
 // A quick tab switch doesn't need any help — socket.io's own reconnection
 // handles a normal blip fine. A longer background stint is different,
 // especially for an iOS home-screen PWA: the OS can silently kill the
@@ -171,7 +182,7 @@ export function RoomProvider({
     )
 
     let staleTimer: number | undefined
-    const scheduleStaleCheck = () => {
+    const scheduleStaleCheck = (timeoutMs: number) => {
       if (staleTimer) window.clearTimeout(staleTimer)
       staleTimer = window.setTimeout(() => {
         if (!receivedState) {
@@ -179,9 +190,9 @@ export function RoomProvider({
           setSelfId(null)
           setReconnecting(false)
         }
-      }, RECONNECT_TIMEOUT_MS)
+      }, timeoutMs)
     }
-    if (token) scheduleStaleCheck()
+    if (token) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
 
     let hiddenAt: number | null = null
     const handleVisibilityChange = () => {
@@ -203,7 +214,7 @@ export function RoomProvider({
       const currentToken = getStoredParticipantToken(roomCode)
       receivedState = false
       setReconnecting(Boolean(currentToken))
-      if (currentToken) scheduleStaleCheck()
+      if (currentToken) scheduleStaleCheck(VISIBILITY_RECONNECT_TIMEOUT_MS)
       socket.disconnect()
       socket.connect()
     }
