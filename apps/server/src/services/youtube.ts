@@ -127,6 +127,38 @@ export async function fetchVideoDurationSeconds(
   return duration ? parseIso8601DurationSeconds(duration) : null
 }
 
+interface VideosListDurationsResponse {
+  items: Array<{ id: string; contentDetails: { duration: string } }>
+}
+
+/**
+ * Batched (not per-video) duration lookup — same 1-quota-unit-per-call
+ * saving as fetchVideoTagInfo, and the same fail-open contract as
+ * fetchVideoDurationSeconds: a video missing from the result (unconfigured,
+ * request failed, or an unparseable duration) just isn't in the returned
+ * map, rather than blocking the caller.
+ */
+export async function fetchVideoDurationsSeconds(
+  videoIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey || videoIds.length === 0) return result
+
+  const ids = videoIds.slice(0, 50)
+  const url = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${encodeURIComponent(ids.join(","))}&key=${apiKey}`
+  const res = await fetch(url)
+  await recordYoutubeQuotaUsage(QUOTA_COST_VIDEOS_LIST)
+  if (!res.ok) return result
+
+  const body = (await res.json()) as VideosListDurationsResponse
+  for (const item of body.items) {
+    const seconds = parseIso8601DurationSeconds(item.contentDetails.duration)
+    if (seconds !== null) result.set(item.id, seconds)
+  }
+  return result
+}
+
 /** Formats a duration in seconds as "m:ss", for use in user-facing messages. */
 export function formatDurationClock(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
@@ -352,18 +384,26 @@ function majorityCategoryId(videos: VideoTagInfo[]): string | undefined {
  * mixed queue gets back a query targeted at each of its distinct clusters
  * instead of one query targeted at none of them.
  *
- * Greedy, not a proper clustering algorithm: repeatedly finds whichever tag
- * currently covers the most still-ungrouped videos, claims every video that
- * has it, and repeats — capped at MAX_RELATED_QUERY_GROUPS groups (each one
- * costs a separate 100-unit search.list call, so this bounds quota spend per
- * refresh click). Only tags shared by at least 2 videos count, since a tag
- * only one video has doesn't define a group. Whatever's left ungrouped after
- * that (including everything, if nothing shared any tag at all) becomes one
- * final catch-all group, using the same tag/title fallback
- * buildRelatedVideosQuery already does for a single video.
+ * Not a proper clustering algorithm: each of up to MAX_RELATED_QUERY_GROUPS
+ * groups is formed by picking a tag at random from whichever still cover at
+ * least 2 ungrouped videos (a tag only one video has doesn't define a
+ * group), and claiming every video that has it. Random, not "biggest
+ * cluster wins", on purpose — with more than a handful of distinct
+ * tags/artists in the queue, always picking by size means every refresh
+ * just re-surfaces the same one or two most-represented clusters and never
+ * anything else; random selection means a later refresh can turn up a
+ * smaller part of the room's taste instead of the same loudest one every
+ * time. Whatever's left ungrouped once nothing else shares a tag (including
+ * everything, if nothing ever did) becomes one final catch-all group, using
+ * the same tag/title fallback buildRelatedVideosQuery already does for a
+ * single video.
+ *
+ * `random` is injectable (defaults to Math.random) so callers — tests,
+ * mainly — can supply a deterministic source instead.
  */
 export function groupVideosByTagCluster(
   videos: VideoTagInfo[],
+  random: () => number = Math.random,
 ): RelatedVideoQueryGroup[] {
   const remaining = new Map(videos.map((video) => [video.videoId, video]))
   const groups: RelatedVideoQueryGroup[] = []
@@ -382,18 +422,11 @@ export function groupVideosByTagCluster(
       }
     }
 
-    let bestTag: string | null = null
-    let bestIds: Set<string> | null = null
-    for (const [tag, ids] of tagVideoIds) {
-      if (ids.size < 2) continue
-      if (!bestIds || ids.size > bestIds.size) {
-        bestTag = tag
-        bestIds = ids
-      }
-    }
-    if (!bestTag || !bestIds) break
+    const eligible = [...tagVideoIds.values()].filter((ids) => ids.size >= 2)
+    if (eligible.length === 0) break
+    const chosenIds = eligible[Math.floor(random() * eligible.length)]!
 
-    const clusterVideos = pool.filter((video) => bestIds!.has(video.videoId))
+    const clusterVideos = pool.filter((video) => chosenIds.has(video.videoId))
     for (const video of clusterVideos) remaining.delete(video.videoId)
 
     const query = buildRelatedVideosQuery(clusterVideos)

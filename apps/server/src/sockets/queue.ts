@@ -29,6 +29,7 @@ import {
 import { getRoomState, roomAllowsLongVideos } from "../services/roomService.js"
 import {
   fetchVideoDurationSeconds,
+  fetchVideoDurationsSeconds,
   fetchVideoMetadata,
   fetchVideoTagInfo,
   formatDurationClock,
@@ -72,6 +73,12 @@ import { restartQueueIfRepeating } from "./queueRepeat.js"
 import type { RoomSocket } from "./types.js"
 
 type Ack = (result: ActionOk | ActionError) => void
+
+// Independent of MAX_VIDEO_DURATION_SECONDS (the room's own, host-overridable
+// long-video cap) — related-video suggestions stay short regardless of that
+// setting, since they're unsolicited suggestions rather than something
+// someone explicitly chose to add.
+const MAX_RELATED_VIDEO_DURATION_SECONDS = 8 * 60
 
 export function registerQueueHandlers(io: Server): void {
   io.on("connection", (socket: RoomSocket) => {
@@ -309,6 +316,19 @@ export function registerQueueHandlers(io: Server): void {
               if (alreadyHaveTitle) continue
               merged.set(result.videoId, result)
             }
+          }
+
+          // search.list can't filter to an exact cutoff itself (its
+          // videoDuration param is only bucketed — short/medium/long — and
+          // none of those land on 8 minutes), so this checks the real
+          // duration afterward and drops anything too long. One batched
+          // call regardless of how many candidates there are; a video
+          // missing from the result (lookup failed) is kept rather than
+          // dropped, the same fail-open behavior as the queue-add duration
+          // check.
+          const durations = await fetchVideoDurationsSeconds([...merged.keys()])
+          for (const [videoId, duration] of durations) {
+            if (duration > MAX_RELATED_VIDEO_DURATION_SECONDS) merged.delete(videoId)
           }
 
           // Shared room state, not per-socket — everyone sees whatever the

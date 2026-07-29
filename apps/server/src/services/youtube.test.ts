@@ -9,6 +9,7 @@ import {
   buildRelatedVideosQuery,
   decodeHtmlEntities,
   fetchVideoDurationSeconds,
+  fetchVideoDurationsSeconds,
   fetchVideoMetadata,
   fetchVideoTagInfo,
   formatDurationClock,
@@ -177,6 +178,68 @@ describe("isYoutubeDataApiConfigured / fetchVideoDurationSeconds", () => {
     )
 
     expect(await fetchVideoDurationSeconds("missing")).toBeNull()
+  })
+})
+
+describe("fetchVideoDurationsSeconds", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it("returns an empty map and skips the request when unconfigured", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "")
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    expect(await fetchVideoDurationsSeconds(["abc"])).toEqual(new Map())
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("returns an empty map and skips the request when there are no video ids", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+
+    expect(await fetchVideoDurationsSeconds([])).toEqual(new Map())
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("batches every id into a single call and parses each duration", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            { id: "short", contentDetails: { duration: "PT3M20S" } },
+            { id: "long", contentDetails: { duration: "PT12M0S" } },
+          ],
+        }),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await fetchVideoDurationsSeconds(["short", "long"])
+
+    expect(result).toEqual(
+      new Map([
+        ["short", 200],
+        ["long", 720],
+      ]),
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=short%2Clong&key=test-key",
+      ),
+    )
+  })
+
+  it("returns an empty map when the request fails", async () => {
+    vi.stubEnv("YOUTUBE_API_KEY", "test-key")
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }))
+
+    expect(await fetchVideoDurationsSeconds(["abc"])).toEqual(new Map())
   })
 })
 
@@ -562,6 +625,55 @@ describe("groupVideosByTagCluster", () => {
     const videos = clusters.flat()
 
     expect(groupVideosByTagCluster(videos)).toHaveLength(3)
+  })
+
+  it("picks the cluster the injected random source points to, not always the same one", () => {
+    const videos = [
+      video({ tags: ["red"], title: "Red Song" }),
+      video({ tags: ["red"], title: "Red Song" }),
+      video({ tags: ["blue"], title: "Blue Song" }),
+      video({ tags: ["blue"], title: "Blue Song" }),
+    ]
+
+    const pickFirst = groupVideosByTagCluster(videos, () => 0)
+    const pickSecond = groupVideosByTagCluster(videos, () => 0.99)
+
+    expect(pickFirst[0]?.query).toContain("red")
+    expect(pickSecond[0]?.query).toContain("blue")
+  })
+
+  it("doesn't always surface the same clusters when there are more than the cap allows", () => {
+    const clusterNames: Array<[string, string]> = [
+      ["alpha", "Alpha Song"],
+      ["bravo", "Bravo Song"],
+      ["charlie", "Charlie Song"],
+      ["delta", "Delta Song"],
+    ]
+    const clusters = clusterNames.map(([tag, title]) => [
+      video({ tags: [tag], title }),
+      video({ tags: [tag], title }),
+    ])
+    const videos = clusters.flat()
+
+    const queriesA = groupVideosByTagCluster(videos, () => 0).map((g) => g.query)
+    const queriesB = groupVideosByTagCluster(videos, () => 0.99).map((g) => g.query)
+
+    expect(queriesA).not.toEqual(queriesB)
+  })
+
+  it("defaults to Math.random when no random source is given", () => {
+    const randomSpy = vi.spyOn(Math, "random")
+    const videos = [
+      video({ tags: ["red"] }),
+      video({ tags: ["red"] }),
+      video({ tags: ["blue"] }),
+      video({ tags: ["blue"] }),
+    ]
+
+    groupVideosByTagCluster(videos)
+
+    expect(randomSpy).toHaveBeenCalled()
+    randomSpy.mockRestore()
   })
 
   it("doesn't cluster on a tag only one video has", () => {
