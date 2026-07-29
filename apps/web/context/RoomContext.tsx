@@ -35,18 +35,23 @@ import { getStoredUserToken } from "../utils/authSession"
 import { decodeJwtPayload } from "../utils/jwt"
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
-const RECONNECT_TIMEOUT_MS = 4000
 
-// A reconnect forced after coming back from the background (see
-// VISIBILITY_RECONNECT_THRESHOLD_MS below) can't reuse the same tight
-// timeout as a fresh page load — a page load's handshake rides an
-// already-warm connection, but a phone waking a suspended app back up often
-// needs to re-establish the network itself first (cellular reconnecting,
-// DNS, TLS), which alone can take longer than RECONNECT_TIMEOUT_MS. Using
-// the short timeout here was wiping a perfectly valid participant token —
-// and kicking someone back to "enter your name" — just because the network
-// was still catching up, not because the room ever stopped recognizing them.
-const VISIBILITY_RECONNECT_TIMEOUT_MS = 12000
+// Deliberately generous, and shared by every "is this token still good"
+// check below — including the very first one at mount. Without a
+// manifest.json/service worker, this app has no way to tell a genuine fresh
+// visit apart from iOS fully killing and relaunching a backgrounded
+// home-screen PWA: both look like an ordinary first mount to this code,
+// there's no visibilitychange transition to hook since the whole JS context
+// is new. A relaunch like that has to re-establish the network from scratch
+// (cellular reconnecting, DNS, TLS) before the server can even respond, so
+// the mount-time check needs the same patience as the explicit
+// visibility-triggered one, not just a fast-page-load budget — a previous,
+// shorter timeout here was wiping perfectly valid participant tokens (and
+// kicking people back to "enter your name") just because the network was
+// still catching up, not because the room ever stopped recognizing them. A
+// few extra seconds of "Reconnecting…" on the rare genuinely-invalid-token
+// case is a much smaller cost than that.
+const RECONNECT_TIMEOUT_MS = 12000
 
 // A quick tab switch doesn't need any help — socket.io's own reconnection
 // handles a normal blip fine. A longer background stint is different,
@@ -214,7 +219,7 @@ export function RoomProvider({
       const currentToken = getStoredParticipantToken(roomCode)
       receivedState = false
       setReconnecting(Boolean(currentToken))
-      if (currentToken) scheduleStaleCheck(VISIBILITY_RECONNECT_TIMEOUT_MS)
+      if (currentToken) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
       socket.disconnect()
       socket.connect()
     }
