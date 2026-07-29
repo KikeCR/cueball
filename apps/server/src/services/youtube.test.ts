@@ -16,6 +16,7 @@ import {
   groupVideosByTagCluster,
   isLikelyDuplicateTitle,
   isYoutubeDataApiConfigured,
+  looksLikeNonMusicContent,
   normalizeTitleForDedup,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
@@ -800,5 +801,61 @@ describe("isLikelyDuplicateTitle", () => {
     expect(
       isLikelyDuplicateTitle("Machi No Dorufin", "街のドルフィン (Dolphin in Town)"),
     ).toBe(false)
+  })
+
+  it("matches a re-upload whose words are reordered, not just decorated", () => {
+    expect(
+      isLikelyDuplicateTitle(
+        "Kingo Hamada - Midnight Cruisin'",
+        "Midnight Cruisin' (1982) - Kingo Hamada 濱田金吾 【Lock Dance × 8bit】",
+      ),
+    ).toBe(true)
+  })
+})
+
+describe("looksLikeNonMusicContent", () => {
+  it("flags an awards-show clip", () => {
+    expect(
+      looksLikeNonMusicContent({
+        title: "HARRY STYLES Wins Album Of The Year",
+        channelTitle: "GRAMMYS",
+      }),
+    ).toBe(true)
+  })
+
+  it("flags an artist interview", () => {
+    expect(
+      looksLikeNonMusicContent({
+        title: "Arctic Monkeys Interview in Amsterdam 2006",
+        channelTitle: "humbggs",
+      }),
+    ).toBe(true)
+  })
+
+  it("flags a meme-style 'iconic' clip", () => {
+    expect(
+      looksLikeNonMusicContent({
+        title: "jamie cook being iconic for one minute straight",
+        channelTitle: "ghost cookie",
+      }),
+    ).toBe(true)
+  })
+
+  it("does not flag an actual song upload", () => {
+    expect(
+      looksLikeNonMusicContent({
+        title: "Harry Styles - Late Night Talking (Official Video)",
+        channelTitle: "HarryStylesVEVO",
+      }),
+    ).toBe(false)
+  })
+
+  it("checks the channel name too, not just the title", () => {
+    expect(
+      looksLikeNonMusicContent({
+        title: "Album Of The Year",
+        channelTitle: "GRAMMYS",
+      }),
+    ).toBe(true)
   })
 })
