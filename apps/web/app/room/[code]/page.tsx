@@ -2,13 +2,16 @@
 
 import { useEffect, useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
+import Link from "next/link"
 import {
+  ArrowLeft,
   Users,
   ListVideo,
   Plus,
   Youtube,
   Cast,
   Loader2,
+  SearchX,
   Trash2,
   Pencil,
   Check,
@@ -101,10 +104,24 @@ function RoomView({ roomCode }: { roomCode: string }) {
 
   if (previewError) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <p role="alert" className="text-danger">
-          {previewError}
-        </p>
+      <main className="flex min-h-[70vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full bg-danger/10">
+          <SearchX className="size-7 text-danger" />
+        </div>
+        <div className="flex flex-col gap-1">
+          <p role="alert" className="text-base font-semibold text-text">
+            {previewError}
+          </p>
+          <p className="text-sm text-muted">
+            Double-check the room code, or head back home.
+          </p>
+        </div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+        >
+          <ArrowLeft className="size-3.5" /> Back to home
+        </Link>
       </main>
     )
   }
