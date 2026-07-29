@@ -36,6 +36,7 @@ import {
   groupVideosByTagCluster,
   isLikelyDuplicateTitle,
   isYoutubeDataApiConfigured,
+  looksLikeNonMusicContent,
   parseYoutubeVideoId,
   searchYoutubeVideos,
   YoutubeQuotaExceededError,
@@ -303,6 +304,12 @@ export function registerQueueHandlers(io: Server): void {
             }
             for (const result of results) {
               if (alreadyQueued.has(result.videoId)) continue
+              // The search-query exclusions already push YouTube's own
+              // ranking away from this stuff, but this catches whatever
+              // still gets through — an interview or awards-show clip is
+              // routinely categorized as Music too, so the category filter
+              // alone doesn't reliably exclude it.
+              if (looksLikeNonMusicContent(result)) continue
               // A popular song routinely has several re-uploads under
               // different video ids, so excluding by id alone still lets
               // through videos the room already has, just from a different

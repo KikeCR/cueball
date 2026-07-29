@@ -354,6 +354,28 @@ export interface RelatedVideoQueryGroup {
   videoCategoryId?: string
 }
 
+// YouTube search supports minus-prefixed terms to exclude matches, the same
+// syntax as a plain google.com search. videoCategoryId=10 (Music) alone
+// isn't a reliable enough signal against this stuff — an awards-show clip
+// or an artist interview is routinely categorized as Music too, since the
+// category is topical ("this is about music") rather than "this is a song".
+const CONTENT_TYPE_EXCLUSION_TERMS = [
+  "interview",
+  "reaction",
+  "reacts",
+  "grammys",
+  "award",
+  "awards",
+  "documentary",
+  "podcast",
+  "compilation",
+]
+
+function withContentTypeExclusions(query: string): string {
+  const exclusions = CONTENT_TYPE_EXCLUSION_TERMS.map((term) => `-${term}`).join(" ")
+  return `${query} ${exclusions}`
+}
+
 const MAX_RELATED_QUERY_GROUPS = 3
 
 /** Undefined (not filtered) unless a clear majority of the group actually shares one category. */
@@ -431,7 +453,10 @@ export function groupVideosByTagCluster(
 
     const query = buildRelatedVideosQuery(clusterVideos)
     if (query) {
-      groups.push({ query, videoCategoryId: majorityCategoryId(clusterVideos) })
+      groups.push({
+        query: withContentTypeExclusions(query),
+        videoCategoryId: majorityCategoryId(clusterVideos),
+      })
     }
   }
 
@@ -439,7 +464,10 @@ export function groupVideosByTagCluster(
     const leftover = [...remaining.values()]
     const query = buildRelatedVideosQuery(leftover)
     if (query) {
-      groups.push({ query, videoCategoryId: majorityCategoryId(leftover) })
+      groups.push({
+        query: withContentTypeExclusions(query),
+        videoCategoryId: majorityCategoryId(leftover),
+      })
     }
   }
 
@@ -456,19 +484,26 @@ export function normalizeTitleForDedup(title: string): string {
     .replace(/\s+/g, " ")
 }
 
-// Below this length, containment is too easy to satisfy by coincidence (a
-// short generic word matching part of an unrelated title) to trust as a
-// real match — only an exact match counts at that point.
-const MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH = 4
+// Below this length, a word is too easy to match by coincidence (a short
+// generic word matching part of an unrelated title) to trust as a real
+// signal, so it's dropped before comparing.
+const MIN_WORD_LENGTH_FOR_DEDUP_MATCH = 4
+
+// Once this much of the shorter title's words show up in the longer one,
+// it's overwhelmingly likely to be the same underlying song rather than a
+// coincidence — not 100%, since a re-upload can drop or reorder a word
+// ("Kingo Hamada - Midnight Cruisin'" vs "Midnight Cruisin' (1982) - Kingo
+// Hamada 濱田金吾 【Lock Dance】").
+const DUPLICATE_TITLE_WORD_OVERLAP_THRESHOLD = 0.8
 
 /**
  * True if two video titles most likely name the same underlying song/video
  * — e.g. a different channel's re-upload with extra decoration in the title
- * ("(FanMade Music Video)", "[Lyrics]", "(1982)", etc). Deliberately loose
- * (substring containment after stripping bracketed noise and punctuation)
- * rather than exact-match, since a re-upload keeps the core title as a
- * literal substring far more often than it reproduces the original title
- * verbatim.
+ * ("(FanMade Music Video)", "[Lyrics]", "(1982)", etc), possibly with its
+ * words in a different order too. Compares by word overlap (after stripping
+ * bracketed noise and punctuation) rather than requiring one title to be a
+ * literal substring of the other, since a re-upload just as often reorders
+ * words as it does append them.
  *
  * Can't bridge a title written in a different script/language for the same
  * song (e.g. a romanized title vs. the same song's original-script title,
@@ -480,11 +515,49 @@ export function isLikelyDuplicateTitle(a: string, b: string): boolean {
   const normalizedB = normalizeTitleForDedup(b)
   if (!normalizedA || !normalizedB) return false
   if (normalizedA === normalizedB) return true
-  if (
-    normalizedA.length < MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH ||
-    normalizedB.length < MIN_TITLE_LENGTH_FOR_CONTAINMENT_MATCH
-  ) {
-    return false
-  }
-  return normalizedA.includes(normalizedB) || normalizedB.includes(normalizedA)
+
+  const wordsA = normalizedA
+    .split(" ")
+    .filter((word) => word.length >= MIN_WORD_LENGTH_FOR_DEDUP_MATCH)
+  const wordsB = normalizedB
+    .split(" ")
+    .filter((word) => word.length >= MIN_WORD_LENGTH_FOR_DEDUP_MATCH)
+  if (wordsA.length === 0 || wordsB.length === 0) return false
+
+  const [shorter, longer] =
+    wordsA.length <= wordsB.length ? [wordsA, wordsB] : [wordsB, wordsA]
+  const longerWords = new Set(longer)
+  const overlap = shorter.filter((word) => longerWords.has(word)).length
+  return overlap / shorter.length >= DUPLICATE_TITLE_WORD_OVERLAP_THRESHOLD
+}
+
+// Substring markers (checked against both title and channel name) for
+// content that routinely turns up for a real artist/song query without
+// being an actual song upload — interviews, awards-show clips, meme/reaction
+// content. This is a blunter, title-text-only backstop for whatever the
+// search-query exclusions (see withContentTypeExclusions) and category
+// filter (see majorityCategoryId) don't catch — YouTube's own category is a
+// topical label ("this is about music"), not "this is literally a song", so
+// an artist interview or awards clip is routinely categorized as Music too.
+const NON_MUSIC_CONTENT_MARKERS = [
+  "interview",
+  "reaction",
+  "reacts",
+  "grammys",
+  "grammy",
+  "award",
+  "documentary",
+  "podcast",
+  "compilation",
+  "behind the scenes",
+  "funny moments",
+  "iconic",
+]
+
+export function looksLikeNonMusicContent(result: {
+  title: string
+  channelTitle: string
+}): boolean {
+  const haystack = `${result.title} ${result.channelTitle}`.toLowerCase()
+  return NON_MUSIC_CONTENT_MARKERS.some((marker) => haystack.includes(marker))
 }
