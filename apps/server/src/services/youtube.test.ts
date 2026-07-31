@@ -20,6 +20,7 @@ import {
   normalizeTitleForDedup,
   parseIso8601DurationSeconds,
   parseYoutubeVideoId,
+  pickRandomSubset,
   searchYoutubeVideos,
   YoutubeQuotaExceededError,
   type VideoTagInfo,
@@ -368,7 +369,7 @@ describe("searchYoutubeVideos", () => {
     ])
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining(
-        "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=rick%20astley&key=test-key",
+        "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=25&q=rick%20astley&key=test-key",
       ),
     )
   })
@@ -744,6 +745,35 @@ describe("groupVideosByTagCluster", () => {
     const groups = groupVideosByTagCluster(videos)
 
     expect(groups[0]?.videoCategoryId).toBeUndefined()
+  })
+})
+
+describe("pickRandomSubset", () => {
+  it("returns everything, unshuffled-length-wise, when the pool is already at or under the cap", () => {
+    const items = ["a", "b", "c"]
+    expect(pickRandomSubset(items, 5)).toHaveLength(3)
+    expect(pickRandomSubset(items, 3)).toHaveLength(3)
+  })
+
+  it("caps the result to the requested count", () => {
+    const items = Array.from({ length: 20 }, (_, i) => `item-${i}`)
+    expect(pickRandomSubset(items, 10)).toHaveLength(10)
+  })
+
+  it("doesn't mutate the input array", () => {
+    const items = ["a", "b", "c", "d", "e"]
+    const original = [...items]
+    pickRandomSubset(items, 2)
+    expect(items).toEqual(original)
+  })
+
+  it("picks a different subset depending on the injected random source", () => {
+    const items = Array.from({ length: 10 }, (_, i) => `item-${i}`)
+
+    const first = pickRandomSubset(items, 3, () => 0)
+    const second = pickRandomSubset(items, 3, () => 0.99)
+
+    expect(first).not.toEqual(second)
   })
 })
 

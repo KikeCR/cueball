@@ -228,7 +228,10 @@ export async function searchYoutubeVideos(
   const categoryParam = options?.videoCategoryId
     ? `&videoCategoryId=${encodeURIComponent(options.videoCategoryId)}`
     : ""
-  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=8&q=${encodeURIComponent(query)}${categoryParam}&key=${apiKey}`
+  // 25 (not 8) since a bigger candidate pool costs nothing extra here (see
+  // the flat per-call cost above) but gives the related-videos refresh
+  // button something to actually sample from — see pickRandomSubset below.
+  const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=25&q=${encodeURIComponent(query)}${categoryParam}&key=${apiKey}`
   const res = await fetch(url)
   await recordYoutubeQuotaUsage(QUOTA_COST_SEARCH_LIST)
   if (!res.ok) {
@@ -472,6 +475,31 @@ export function groupVideosByTagCluster(
   }
 
   return groups
+}
+
+/**
+ * The candidate pool behind a related-videos refresh is otherwise fully
+ * deterministic: the same room queue builds the same search query, which —
+ * cached or not — is the same request to YouTube, so it returns the same
+ * results every time. Sampling a random subset of the pool on every refresh
+ * is what actually makes the "Refresh" button feel like it does something,
+ * without spending any extra search quota (the underlying search/cache
+ * behavior is unchanged; this only decides what to display).
+ *
+ * `random` is injectable, same reasoning as groupVideosByTagCluster.
+ */
+export function pickRandomSubset<T>(
+  items: T[],
+  count: number,
+  random: () => number = Math.random,
+): T[] {
+  if (items.length <= count) return items
+  const pool = [...items]
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j]!, pool[i]!]
+  }
+  return pool.slice(0, count)
 }
 
 /** Strips uploader decoration (brackets, punctuation, casing) down to a comparable "core" title. */
