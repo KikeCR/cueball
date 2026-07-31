@@ -425,7 +425,7 @@ function QueueItemActionsMenu({
         <MoreVertical className="size-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-10 mt-1 w-40 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg">
+        <div className="absolute right-0 top-full z-20 mt-1 w-max min-w-40 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg">
           {onMarkPlayed && (
             <button
               type="button"
@@ -433,7 +433,7 @@ function QueueItemActionsMenu({
                 setOpen(false)
                 onMarkPlayed()
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text transition-colors hover:bg-upvote/15 hover:text-upvote"
+              className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-text transition-colors hover:bg-upvote/15 hover:text-upvote"
             >
               <Check className="size-3.5" /> Mark as played
             </button>
@@ -444,7 +444,7 @@ function QueueItemActionsMenu({
               setOpen(false)
               onRemove()
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text transition-colors hover:bg-danger/15 hover:text-danger"
+            className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-2 text-left text-sm text-text transition-colors hover:bg-danger/15 hover:text-danger"
           >
             <X className="size-3.5" /> Remove from queue
           </button>

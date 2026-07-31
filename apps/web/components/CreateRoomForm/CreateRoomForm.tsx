@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Cast, Loader2, Youtube } from "lucide-react"
+import { Cast, Loader2 } from "lucide-react"
 import {
   CAST_MODE,
   MAX_NAME_LENGTH,
@@ -16,6 +16,7 @@ import { api } from "../../api/client"
 import { useAuth } from "../../context/AuthContext"
 import { useToast } from "../../context/ToastContext"
 import { storeParticipantToken } from "../../utils/participantSession"
+import { YouTubeIcon } from "../icons"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
@@ -68,7 +69,7 @@ export function CreateRoomForm() {
             mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
-          <Cast className="size-3.5" /> Cast
+          <Cast className="size-5" /> Cast
         </button>
         <button
           type="button"
@@ -77,7 +78,7 @@ export function CreateRoomForm() {
             mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
-          <Youtube className="size-3.5" /> Playlist
+          <YouTubeIcon className="size-5" /> Playlist
         </button>
       </div>
       <Label>
