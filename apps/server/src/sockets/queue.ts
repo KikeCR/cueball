@@ -38,6 +38,7 @@ import {
   isYoutubeDataApiConfigured,
   looksLikeNonMusicContent,
   parseYoutubeVideoId,
+  pickRandomSubset,
   searchYoutubeVideos,
   YoutubeQuotaExceededError,
   type YoutubeSearchResult,
@@ -80,6 +81,12 @@ type Ack = (result: ActionOk | ActionError) => void
 // setting, since they're unsolicited suggestions rather than something
 // someone explicitly chose to add.
 const MAX_RELATED_VIDEO_DURATION_SECONDS = 8 * 60
+
+// Capped display count for related videos — the filtered candidate pool
+// behind it can be much bigger (up to 25 per tag-cluster query), and
+// pickRandomSubset resamples from that pool on every refresh, which is what
+// makes clicking "Refresh" actually surface something different.
+const RELATED_VIDEOS_DISPLAY_COUNT = 10
 
 export function registerQueueHandlers(io: Server): void {
   io.on("connection", (socket: RoomSocket) => {
@@ -341,7 +348,11 @@ export function registerQueueHandlers(io: Server): void {
           // Shared room state, not per-socket — everyone sees whatever the
           // last refresh (by anyone) found, the same way everyone already
           // sees the same queue.
-          await setRelatedVideosState(roomId, [...merged.values()])
+          const selected = pickRandomSubset(
+            [...merged.values()],
+            RELATED_VIDEOS_DISPLAY_COUNT,
+          )
+          await setRelatedVideosState(roomId, selected)
           ack?.({ ok: true })
           await broadcastRoomState(io, roomId)
         } catch (err) {

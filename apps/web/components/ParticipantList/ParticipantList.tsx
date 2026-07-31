@@ -78,7 +78,7 @@ export function ParticipantList({
                   onChange={(event) => setEditingName(event.target.value)}
                   maxLength={MAX_NAME_LENGTH}
                   aria-label="Your name"
-                  className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-base text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
                 />
                 <button
                   type="submit"
