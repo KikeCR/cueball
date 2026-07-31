@@ -19,7 +19,7 @@ export default function PrivacyPolicyPage() {
       <article className="flex flex-col gap-6 text-sm leading-relaxed text-text">
         <header>
           <h1 className="text-2xl font-bold tracking-tight">Privacy Policy</h1>
-          <p className="mt-1 text-xs text-muted">Last updated: July 24, 2026</p>
+          <p className="mt-1 text-xs text-muted">Last updated: July 31, 2026</p>
         </header>
 
         <p>
@@ -80,6 +80,34 @@ export default function PrivacyPolicyPage() {
             <li>Showing your past rooms if you&apos;re signed in.</li>
           </ul>
           <p>We do not use your data for advertising, and we do not sell or rent it to anyone.</p>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-base font-bold">Cookies and local storage</h2>
+          <p>
+            CueBall doesn&apos;t use cookies. It does store a small amount of
+            data directly in your browser&apos;s local storage (a
+            first-party browser storage mechanism, similar to a cookie, that
+            only CueBall&apos;s own code can read) so the app keeps working
+            the way you&apos;d expect between visits:
+          </p>
+          <ul className="ml-5 list-disc space-y-2">
+            <li>
+              Your signed-in session token, if you have an account and are
+              logged in.
+            </li>
+            <li>
+              A per-room participant token, so reloading or briefly losing
+              connection to a room keeps you as the same participant instead
+              of asking you to rejoin.
+            </li>
+            <li>Your light/dark theme preference.</li>
+          </ul>
+          <p>
+            None of this is used for advertising, cross-site tracking, or
+            analytics, and it&apos;s never shared with or accessible to
+            third parties or other participants in a room.
+          </p>
         </section>
 
         <section className="flex flex-col gap-2">

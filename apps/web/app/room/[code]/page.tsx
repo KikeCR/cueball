@@ -8,7 +8,6 @@ import {
   Users,
   ListVideo,
   Plus,
-  Youtube,
   Cast,
   Loader2,
   SearchX,
@@ -36,6 +35,7 @@ import { PlaylistShare } from "../../../components/PlaylistShare"
 import { CastControlsCard } from "../../../components/CastControlsCard"
 import { NowPlayingBanner } from "../../../components/NowPlayingBanner"
 import { CopyButton } from "../../../components/CopyButton"
+import { YouTubeIcon } from "../../../components/icons"
 import { Card } from "../../../components/ui/card"
 import { Button } from "../../../components/ui/button"
 import { ConfirmDialog } from "../../../components/ui/confirmDialog"
@@ -340,7 +340,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
           ) : (
             <>
               <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
-                <Youtube className="size-3.5" /> YouTube playlist
+                <YouTubeIcon className="size-5" /> YouTube playlist
               </h2>
               {room?.youtubePlaylistId ? (
                 <PlaylistShare playlistId={room.youtubePlaylistId} />
