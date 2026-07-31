@@ -61,6 +61,17 @@ model Room {
   // of leaving the room with nothing to play.
   repeatEnabled Boolean @default(false)
 
+  // Playlist-sync rooms only (Cast mode tracks its own currently-playing
+  // item in Redis instead — see castSession.ts). Pins whichever item is
+  // already loaded on the real YouTube playlist so a later vote can't
+  // promote something else ahead of it: a real playlist doesn't rewind what
+  // it's already playing, so inserting a new item "before" it there just
+  // gets that item silently skipped forever, not actually played next.
+  // Cleared automatically (onDelete: SetNull) if the pinned item is removed
+  // or the queue is cleared; explicitly re-resolved once it's marked played.
+  nowPlayingQueueItemId String?    @unique
+  nowPlayingQueueItem   QueueItem? @relation("RoomNowPlaying", fields: [nowPlayingQueueItemId], references: [id], onDelete: SetNull)
+
   participants Participant[] @relation("RoomParticipants")
   queueItems   QueueItem[]   @relation("RoomQueueItems")
 
@@ -112,6 +123,8 @@ model QueueItem {
   createdAt DateTime  @default(now())
 
   votes Vote[]
+
+  nowPlayingForRoom Room? @relation("RoomNowPlaying")
 
   @@index([roomId])
   @@map("queue_items")

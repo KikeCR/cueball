@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { QueueList } from "../../components/QueueList"
@@ -48,7 +48,20 @@ export class QueueListPageObject {
     return screen.getByRole("button", { name: "Downvote" })
   }
 
+  get actionsMenuButton() {
+    return screen.queryByRole("button", { name: "Video actions" })
+  }
+
+  /** The remove/mark-played buttons live behind a per-row kebab menu now — open it (if there is one) before looking for them. */
+  private openActionsMenu() {
+    const menuButton = this.actionsMenuButton
+    if (menuButton && menuButton.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(menuButton)
+    }
+  }
+
   get removeButton() {
+    this.openActionsMenu()
     return screen.queryByRole("button", { name: "Remove from queue" })
   }
 
@@ -65,6 +78,7 @@ export class QueueListPageObject {
   }
 
   get markPlayedButton() {
+    this.openActionsMenu()
     return screen.queryByRole("button", { name: "Mark as played" })
   }
 

@@ -131,6 +131,40 @@ describe("QueueList", () => {
     expect(queueList.removeButton).not.toBeInTheDocument()
   })
 
+  it("hides the actions menu trigger entirely from a guest who can't moderate the item", () => {
+    const other: ParticipantWithPresence = {
+      ...guest,
+      id: "p3",
+      guestName: "Alex",
+    }
+    const item = makeItem({ addedByParticipantId: "p2" })
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants: [...participants, other],
+      selfId: "p3",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+    })
+
+    expect(queueList.actionsMenuButton).not.toBeInTheDocument()
+  })
+
+  it("shares a single actions menu trigger for mark-played and remove instead of separate buttons", () => {
+    const item = makeItem()
+    const queueList = new QueueListPageObject({
+      queue: [item],
+      participants,
+      selfId: "p1",
+      onVote: vi.fn(),
+      onRemove: vi.fn(),
+      onSetPlayed: vi.fn(),
+    })
+
+    expect(queueList.actionsMenuButton).toBeInTheDocument()
+    expect(queueList.removeButton).toBeInTheDocument()
+    expect(queueList.markPlayedButton).toBeInTheDocument()
+  })
+
   it("shows drag handles for the host when reordering is wired up", () => {
     const queueList = new QueueListPageObject({
       queue: [makeItem({ id: "q1" }), makeItem({ id: "q2" })],

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import {
   DndContext,
   PointerSensor,
@@ -12,7 +13,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, Repeat, Trash2, Undo2, X } from "lucide-react"
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  GripVertical,
+  Loader2,
+  MoreVertical,
+  Repeat,
+  Trash2,
+  Undo2,
+  X,
+} from "lucide-react"
 import type { ParticipantWithPresence, QueueItem } from "@cueball/shared"
 import { cn } from "../../utils/cn"
 import { Button } from "../ui/button"
@@ -195,33 +207,14 @@ export function QueueList({
                 </button>
               </div>
 
-              {onSetPlayed && (
-                <div className="flex size-7 shrink-0 items-center justify-center">
-                  {canModerate && (
-                    <button
-                      type="button"
-                      aria-label="Mark as played"
-                      onClick={() => onSetPlayed(item.id, true)}
-                      className="rounded-md p-1.5 text-muted transition-colors hover:bg-upvote/15 hover:text-upvote"
-                    >
-                      <Check className="size-4" />
-                    </button>
-                  )}
-                </div>
+              {canModerate && (
+                <QueueItemActionsMenu
+                  onMarkPlayed={
+                    onSetPlayed ? () => onSetPlayed(item.id, true) : undefined
+                  }
+                  onRemove={() => onRemove(item.id)}
+                />
               )}
-
-              <div className="flex size-7 shrink-0 items-center justify-center">
-                {canModerate && (
-                  <button
-                    type="button"
-                    aria-label="Remove from queue"
-                    onClick={() => onRemove(item.id)}
-                    className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
-                  >
-                    <X className="size-4" />
-                  </button>
-                )}
-              </div>
             </QueueListItem>
           )
         })
@@ -377,5 +370,86 @@ function QueueListItem({
       )}
       {children}
     </li>
+  )
+}
+
+/**
+ * One consistent trigger per row instead of separate mark-played/remove
+ * buttons — a row with only one of those (or neither) used to leave a
+ * reserved-but-empty gap next to the vote arrows, which read as a layout
+ * bug rather than "you can't do anything here." Not rendering this at all
+ * when there's nothing to do (see the canModerate check at the call site)
+ * means those rows are simply a little narrower instead.
+ */
+function QueueItemActionsMenu({
+  onMarkPlayed,
+  onRemove,
+}: {
+  onMarkPlayed?: () => void
+  onRemove: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("mousedown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Video actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          "flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-text",
+          open && "bg-surface-hover text-text",
+        )}
+      >
+        <MoreVertical className="size-4" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-1 w-40 overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg">
+          {onMarkPlayed && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onMarkPlayed()
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text transition-colors hover:bg-upvote/15 hover:text-upvote"
+            >
+              <Check className="size-3.5" /> Mark as played
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              onRemove()
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text transition-colors hover:bg-danger/15 hover:text-danger"
+          >
+            <X className="size-3.5" /> Remove from queue
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
