@@ -1,7 +1,7 @@
 import type { QueueItem, Room } from "@prisma/client"
 import { recordYoutubeQuotaUsage } from "../redis/youtubeQuota.js"
 import { prisma } from "./prisma.js"
-import { sortQueueItems } from "./roomService.js"
+import { resolveNowPlayingQueueItem, sortQueueItems } from "./roomService.js"
 import { getAuthorizedYoutubeClient } from "./youtubeAuth.js"
 
 // All four playlist write endpoints below cost 50 quota units per call
@@ -167,6 +167,16 @@ export async function syncPlaylistOrder(roomId: string): Promise<void> {
   if (!room?.youtubePlaylistId) return
 
   const allItems = await prisma.queueItem.findMany({ where: { roomId } })
-  const sortedItems = sortQueueItems(allItems, room.manualQueueOrder)
+  const nowPlayingQueueItemId = await resolveNowPlayingQueueItem({
+    roomId,
+    mode: room.mode,
+    currentPinId: room.nowPlayingQueueItemId,
+    unplayedItems: allItems.filter((item) => !item.playedAt),
+  })
+  const sortedItems = sortQueueItems(
+    allItems,
+    room.manualQueueOrder,
+    nowPlayingQueueItemId,
+  )
   await syncPlaylistOrderForItems(room, sortedItems)
 }

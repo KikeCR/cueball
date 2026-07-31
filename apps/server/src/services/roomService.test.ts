@@ -1,3 +1,4 @@
+import { RoomMode } from "@prisma/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("./prisma.js", () => ({
@@ -37,6 +38,7 @@ import {
   promoteParticipant,
   removeParticipant,
   renameParticipant,
+  resolveNowPlayingQueueItem,
   roomAllowsLongVideos,
   roomAllowsRelatedVideos,
   setRoomName,
@@ -67,6 +69,24 @@ describe("sortQueueItems", () => {
     const original = [...items]
     sortQueueItems(items, true)
     expect(items).toEqual(original)
+  })
+
+  it("keeps the pinned item first even when a later vote would otherwise outrank it", () => {
+    // "b" and "c" would normally sort ahead of "a" on score alone — the pin
+    // is exactly what stops that from silently skipping "a" on the real
+    // YouTube playlist once it's already playing.
+    const result = sortQueueItems(items, false, "a")
+    expect(result.map((i) => i.id)).toEqual(["a", "c", "b"])
+  })
+
+  it("ignores the pin in manual-order mode, since a host drag is deliberate", () => {
+    const result = sortQueueItems(items, true, "a")
+    expect(result.map((i) => i.id)).toEqual(["b", "c", "a"])
+  })
+
+  it("falls back to normal score order when the pinned id isn't in the list", () => {
+    const result = sortQueueItems(items, false, "does-not-exist")
+    expect(result.map((i) => i.id)).toEqual(["c", "b", "a"])
   })
 })
 
@@ -106,6 +126,90 @@ describe("orderQueueForRoom", () => {
     ]
     const result = orderQueueForRoom(items, false)
     expect(result.map((i) => i.id)).toEqual(["upcoming", "recent-play", "old-play"])
+  })
+
+  it("passes the pin through to the unplayed section", () => {
+    const items = [
+      { id: "a", score: 1, position: 0, createdAt: new Date("2026-01-01"), playedAt: null },
+      { id: "b", score: 5, position: 1, createdAt: new Date("2026-01-01"), playedAt: null },
+    ]
+    const result = orderQueueForRoom(items, false, "a")
+    expect(result.map((i) => i.id)).toEqual(["a", "b"])
+  })
+})
+
+describe("resolveNowPlayingQueueItem", () => {
+  const unplayedItems = [
+    { id: "a", score: 0, position: 0, createdAt: new Date("2026-01-01") },
+    { id: "b", score: 0, position: 1, createdAt: new Date("2026-01-02") },
+  ]
+
+  beforeEach(() => {
+    vi.mocked(prisma.room.update).mockReset()
+  })
+
+  it("returns null for Cast-mode rooms without touching the DB", async () => {
+    const result = await resolveNowPlayingQueueItem({
+      roomId: "r1",
+      mode: RoomMode.CAST,
+      currentPinId: null,
+      unplayedItems,
+    })
+    expect(result).toBeNull()
+    expect(prisma.room.update).not.toHaveBeenCalled()
+  })
+
+  it("keeps the existing pin when it's still an unplayed item, without writing to the DB", async () => {
+    const result = await resolveNowPlayingQueueItem({
+      roomId: "r1",
+      mode: RoomMode.PLAYLIST,
+      currentPinId: "b",
+      unplayedItems,
+    })
+    expect(result).toBe("b")
+    expect(prisma.room.update).not.toHaveBeenCalled()
+  })
+
+  it("pins whatever currently tops score order when there's no valid pin yet, and persists it", async () => {
+    const result = await resolveNowPlayingQueueItem({
+      roomId: "r1",
+      mode: RoomMode.PLAYLIST,
+      currentPinId: null,
+      unplayedItems,
+    })
+    expect(result).toBe("a")
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "r1" },
+      data: { nowPlayingQueueItemId: "a" },
+    })
+  })
+
+  it("re-pins once the previous pin is no longer unplayed (played or removed)", async () => {
+    const result = await resolveNowPlayingQueueItem({
+      roomId: "r1",
+      mode: RoomMode.PLAYLIST,
+      currentPinId: "now-played-or-gone",
+      unplayedItems,
+    })
+    expect(result).toBe("a")
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "r1" },
+      data: { nowPlayingQueueItemId: "a" },
+    })
+  })
+
+  it("clears the pin once nothing is left unplayed", async () => {
+    const result = await resolveNowPlayingQueueItem({
+      roomId: "r1",
+      mode: RoomMode.PLAYLIST,
+      currentPinId: "a",
+      unplayedItems: [],
+    })
+    expect(result).toBeNull()
+    expect(prisma.room.update).toHaveBeenCalledWith({
+      where: { id: "r1" },
+      data: { nowPlayingQueueItemId: null },
+    })
   })
 })
 

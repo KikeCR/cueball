@@ -377,18 +377,27 @@ export async function getUserRoomHistory(userId: string): Promise<
  * instead. Shared with `syncPlaylistOrder` so the real YouTube playlist and
  * the in-app queue never disagree about which mode is active.
  */
+/**
+ * `pinnedId` (a playlist-sync room's nowPlayingQueueItemId — see
+ * resolveNowPlayingQueueItem) always sorts first when present, regardless
+ * of score — only applied in vote-driven order, never manual order, since a
+ * host drag is a deliberate action the pin shouldn't second-guess.
+ */
 export function sortQueueItems<
-  T extends { score: number; position: number; createdAt: Date },
->(items: T[], manualOrder: boolean): T[] {
-  const sorted = [...items]
+  T extends { id: string; score: number; position: number; createdAt: Date },
+>(items: T[], manualOrder: boolean, pinnedId: string | null = null): T[] {
   if (manualOrder) {
-    sorted.sort((a, b) => a.position - b.position)
-  } else {
-    sorted.sort(
-      (a, b) => b.score - a.score || a.createdAt.getTime() - b.createdAt.getTime(),
-    )
+    return [...items].sort((a, b) => a.position - b.position)
   }
-  return sorted
+
+  const pinned = pinnedId
+    ? items.find((item) => item.id === pinnedId)
+    : undefined
+  const rest = pinned ? items.filter((item) => item.id !== pinnedId) : [...items]
+  rest.sort(
+    (a, b) => b.score - a.score || a.createdAt.getTime() - b.createdAt.getTime(),
+  )
+  return pinned ? [pinned, ...rest] : rest
 }
 
 /**
@@ -398,17 +407,64 @@ export function sortQueueItems<
  */
 export function orderQueueForRoom<
   T extends {
+    id: string
     score: number
     position: number
     createdAt: Date
     playedAt: Date | null
   },
->(items: T[], manualOrder: boolean): T[] {
+>(items: T[], manualOrder: boolean, pinnedId: string | null = null): T[] {
   const unplayed = items.filter((item) => !item.playedAt)
   const played = items
     .filter((item) => item.playedAt)
     .sort((a, b) => b.playedAt!.getTime() - a.playedAt!.getTime())
-  return [...sortQueueItems(unplayed, manualOrder), ...played]
+  return [...sortQueueItems(unplayed, manualOrder, pinnedId), ...played]
+}
+
+/**
+ * Playlist-sync rooms only — Cast-mode rooms track their currently-playing
+ * item separately, in Redis (see castSession.ts). Resolves (and persists)
+ * whichever queue item should stay pinned first in the real YouTube
+ * playlist, self-healing whenever the previous pin is no longer valid
+ * (played, removed, or never set yet): the new pin becomes whatever
+ * currently tops score order, and then *stays* there — even once a later
+ * vote would otherwise outrank it — because a real YouTube playlist doesn't
+ * rewind what it's already playing. Inserting something "before" it there
+ * doesn't reorder it, it just gets silently skipped for the rest of that
+ * pass through the list, which is exactly the bug this pin exists to avoid.
+ *
+ * Takes the room's already-loaded mode/pin and the unplayed items rather
+ * than reading them itself, since every caller already has this loaded and
+ * this runs on every state broadcast.
+ */
+export async function resolveNowPlayingQueueItem(params: {
+  roomId: string
+  mode: PrismaRoomMode
+  currentPinId: string | null
+  unplayedItems: Array<{
+    id: string
+    score: number
+    position: number
+    createdAt: Date
+  }>
+}): Promise<string | null> {
+  if (params.mode === PrismaRoomMode.CAST) return null
+
+  if (
+    params.currentPinId &&
+    params.unplayedItems.some((item) => item.id === params.currentPinId)
+  ) {
+    return params.currentPinId
+  }
+
+  const next = sortQueueItems(params.unplayedItems, false)[0] ?? null
+  if (next?.id !== params.currentPinId) {
+    await prisma.room.update({
+      where: { id: params.roomId },
+      data: { nowPlayingQueueItemId: next?.id ?? null },
+    })
+  }
+  return next?.id ?? null
 }
 
 export async function getRoomState(roomId: string) {
@@ -421,7 +477,17 @@ export async function getRoomState(roomId: string) {
   })
   if (!room) return null
 
-  const queueItems = orderQueueForRoom(room.queueItems, room.manualQueueOrder)
+  const nowPlayingQueueItemId = await resolveNowPlayingQueueItem({
+    roomId: room.id,
+    mode: room.mode,
+    currentPinId: room.nowPlayingQueueItemId,
+    unplayedItems: room.queueItems.filter((item) => !item.playedAt),
+  })
+  const queueItems = orderQueueForRoom(
+    room.queueItems,
+    room.manualQueueOrder,
+    nowPlayingQueueItemId,
+  )
 
   const connected = await getConnectedParticipantIds(roomId)
   const cast = await getCastState(roomId)
