@@ -225,7 +225,7 @@ export function QueueList({
   return (
     <div className="flex flex-col gap-4">
       {canReorder ? (
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd} autoScroll={false}>
           <SortableContext
             items={upcoming.map((item) => item.id)}
             strategy={verticalListSortingStrategy}
