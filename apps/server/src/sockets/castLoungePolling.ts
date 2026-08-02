@@ -285,15 +285,27 @@ export function startCastLoungePolling(io: Server): void {
     void (async () => {
       try {
         const keys = await redis.keys(LOUNGE_KEY_PATTERN)
-        for (const key of keys) {
-          const roomId = roomIdFromLoungeKey(key)
-          if (!roomId) continue
-          try {
-            await pollRoom(io, roomId)
-          } catch (err) {
-            console.error(`Cast lounge poll failed for room ${roomId}`, err)
-          }
-        }
+        // In parallel, not sequentially: each room's poll is already
+        // serialized against everything else touching that same room via
+        // withLoungeLock (a per-room lock, so there's no cross-room
+        // contention here) — polling rooms one at a time meant every
+        // room's real poll cadence degraded the more concurrent Cast
+        // sessions were active, since each one's `getLoungeNowPlaying`
+        // long-poll request adds to the same tick before the next room
+        // even starts. castQueueSync.ts's debounce is sized assuming
+        // POLL_INTERVAL_MS reflects how fresh `currentQueueItemId` actually
+        // is — a degraded cadence widens that race back open.
+        await Promise.all(
+          keys.map(async (key) => {
+            const roomId = roomIdFromLoungeKey(key)
+            if (!roomId) return
+            try {
+              await pollRoom(io, roomId)
+            } catch (err) {
+              console.error(`Cast lounge poll failed for room ${roomId}`, err)
+            }
+          }),
+        )
       } finally {
         sweeping = false
       }
