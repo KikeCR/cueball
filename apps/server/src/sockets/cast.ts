@@ -76,10 +76,18 @@ async function bootstrapCastSession(params: {
         let session = lounge
         const [first, ...rest] = unplayed
         if (first) {
-          // setLoungePlaylist replaces whatever the receiver was doing, so
-          // this alone already clears out anything left over from a prior
-          // session (this room's or another CueBall room's, on the same
-          // physical TV).
+          // setLoungePlaylist loading a video *looks* like it clears out
+          // anything left over — the receiver visibly starts playing our
+          // video right away — but if the TV had an active YouTube Mix
+          // (autoplay radio) running before pairing, that turned out not to
+          // be enough: our first video plays, but once it ends the receiver
+          // falls back to continuing the old Mix instead of advancing into
+          // the rest of this room's queue. A Mix's autoplay-next state
+          // apparently isn't considered part of "whatever the receiver was
+          // doing" that setPlaylist replaces. Explicitly clearing first,
+          // before loading our own video, is the only way found to reliably
+          // drop that leftover Mix state too.
+          session = await clearLoungePlaylist(session)
           session = await setLoungePlaylist(session, first.youtubeVideoId)
           for (const item of rest) {
             session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
