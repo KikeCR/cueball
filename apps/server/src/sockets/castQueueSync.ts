@@ -11,10 +11,18 @@ import {
   addVideoToLoungeQueue,
   removeVideoFromLoungeQueue,
 } from "../services/youtubeLounge.js"
+import { POLL_INTERVAL_MS } from "./castLoungePolling.js"
 import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 
-const DEBOUNCE_MS = 1500
+// Must stay longer than POLL_INTERVAL_MS: `cast.currentQueueItemId` (used
+// below to exclude whatever's actually playing right now from the reorder)
+// is only ever as fresh as the last poll tick. A shorter debounce than that
+// interval means a vote landing right as the receiver finishes a video can
+// fire this before the poller has caught up, so the video that just started
+// playing still looks "not yet playing" here — and gets removed and
+// re-added to the live queue like anything else, which skips it.
+const DEBOUNCE_MS = POLL_INTERVAL_MS + 1000
 const timers = new Map<string, NodeJS.Timeout>()
 
 /**

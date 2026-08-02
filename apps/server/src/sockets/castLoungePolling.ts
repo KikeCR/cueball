@@ -23,7 +23,14 @@ import { withLoungeLock } from "./loungeLock.js"
 import { notifyPlaylistSyncFailed } from "./playlistNotifications.js"
 import { restartQueueIfRepeating } from "./queueRepeat.js"
 
-const POLL_INTERVAL_MS = 2000
+// Exported so castQueueSync.ts's debounce can stay safely longer than this
+// — a vote-driven queue resync that fires before the poller has had a
+// chance to notice the receiver already moved to a new video would read a
+// stale `currentQueueItemId`, fail to exclude the video actually playing
+// right now from the reorder, and remove-then-re-add it like any other
+// queued item — which is exactly what makes a real, actively-playing video
+// skip.
+export const POLL_INTERVAL_MS = 2000
 const LOUNGE_KEY_PATTERN = "room:*:lounge"
 
 // A "stopped" report from the receiver might be a real end-of-video, or it

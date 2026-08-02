@@ -187,6 +187,7 @@ export interface RoomHistoryResponse {
 
 /** Every field is optional — a partial update, only the fields present are changed. */
 export interface UpdateUserSettingsRequest {
+  displayName?: string
   allowLongVideos?: boolean
   relatedVideosBetaEnabled?: boolean
 }

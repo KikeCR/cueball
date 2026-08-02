@@ -199,6 +199,21 @@ export function RoomProvider({
     }
     if (token) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
 
+    // Force a fresh handshake unconditionally rather than checking
+    // `socket.connected` first — after a real background suspension that
+    // flag can't be trusted, since the transport can die silently without
+    // the client ever finding out. Disconnecting a socket that actually
+    // was still fine is cheap and harmless; it just repeats the same
+    // rejoin round-trip a normal reconnect would do anyway.
+    const forceReconnect = () => {
+      const currentToken = getStoredParticipantToken(roomCode)
+      receivedState = false
+      setReconnecting(Boolean(currentToken))
+      if (currentToken) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
+      socket.disconnect()
+      socket.connect()
+    }
+
     let hiddenAt: number | null = null
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -209,25 +224,29 @@ export function RoomProvider({
       const hiddenForMs = Date.now() - hiddenAt
       hiddenAt = null
       if (hiddenForMs < VISIBILITY_RECONNECT_THRESHOLD_MS) return
-
-      // Force a fresh handshake unconditionally rather than checking
-      // `socket.connected` first — after a real background suspension that
-      // flag can't be trusted, since the transport can die silently without
-      // the client ever finding out. Disconnecting a socket that actually
-      // was still fine is cheap and harmless; it just repeats the same
-      // rejoin round-trip a normal reconnect would do anyway.
-      const currentToken = getStoredParticipantToken(roomCode)
-      receivedState = false
-      setReconnecting(Boolean(currentToken))
-      if (currentToken) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
-      socket.disconnect()
-      socket.connect()
+      forceReconnect()
     }
     document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    // Safari (and any other WebKit browser, including iOS Chrome — Apple
+    // requires all iOS browsers to use WebKit) leans on the back-forward
+    // cache far more aggressively than Chrome/Firefox on desktop: switching
+    // away and back can restore this exact page — same JS heap, same
+    // socket object, no remount, and not reliably the same
+    // visibilitychange timing this effect otherwise depends on — straight
+    // from a fully frozen suspension instead of tearing it down. The socket
+    // is effectively always dead by that point, so this is unconditional,
+    // no hidden-duration threshold: `event.persisted` alone means real time
+    // passed while everything was frozen.
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) forceReconnect()
+    }
+    window.addEventListener("pageshow", handlePageShow)
 
     return () => {
       if (staleTimer) window.clearTimeout(staleTimer)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
+      window.removeEventListener("pageshow", handlePageShow)
       socket.disconnect()
       socketRef.current = null
       setSocket(null)

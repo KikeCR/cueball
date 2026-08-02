@@ -181,5 +181,20 @@ describe("updateUserSettings", () => {
       data: { allowLongVideos: true, relatedVideosBetaEnabled: true },
     })
   })
+
+  it("updates the display name", async () => {
+    vi.mocked(prisma.user.update).mockResolvedValue({
+      ...EXISTING_USER,
+      displayName: "New Name",
+    } as never)
+
+    const user = await updateUserSettings("user-1", { displayName: "New Name" })
+
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { displayName: "New Name" },
+    })
+    expect(user.displayName).toBe("New Name")
+  })
 })
 
