@@ -1,10 +1,10 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowLeft } from "lucide-react"
-import { MAX_VIDEO_DURATION_SECONDS } from "@cueball/shared"
+import { ArrowLeft, Check, Pencil, X } from "lucide-react"
+import { MAX_NAME_LENGTH, MAX_VIDEO_DURATION_SECONDS } from "@cueball/shared"
 import { useAuth } from "../../context/AuthContext"
 import { useToast } from "../../context/ToastContext"
 import { LoginForm } from "../../components/LoginForm"
@@ -67,6 +67,21 @@ export default function AccountPage() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("login")
   const [exchangingToken, setExchangingToken] = useState(false)
+  const [editingDisplayName, setEditingDisplayName] = useState<string | null>(
+    null,
+  )
+
+  const submitDisplayName = (event: FormEvent) => {
+    event.preventDefault()
+    const trimmed = editingDisplayName?.trim()
+    setEditingDisplayName(null)
+    if (!trimmed || trimmed === user?.displayName) return
+    updateSettings({ displayName: trimmed }).catch((err) =>
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update name",
+      ),
+    )
+  }
 
   const handleToggleAllowLongVideos = (allowLongVideos: boolean) => {
     updateSettings({ allowLongVideos }).catch((err) =>
@@ -160,7 +175,48 @@ export default function AccountPage() {
       </Link>
       <div className="flex flex-col gap-5">
         <Card className="flex flex-col gap-2">
-          <h1 className="text-lg font-bold">{user.displayName}</h1>
+          {editingDisplayName !== null ? (
+            <form
+              onSubmit={submitDisplayName}
+              className="flex items-center gap-1.5"
+            >
+              <input
+                autoFocus
+                value={editingDisplayName}
+                onChange={(event) => setEditingDisplayName(event.target.value)}
+                maxLength={MAX_NAME_LENGTH}
+                aria-label="Display name"
+                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-bg px-2 text-lg font-bold text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+              <button
+                type="submit"
+                aria-label="Save display name"
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-upvote/15 hover:text-upvote"
+              >
+                <Check className="size-4" />
+              </button>
+              <button
+                type="button"
+                aria-label="Cancel"
+                onClick={() => setEditingDisplayName(null)}
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-danger/15 hover:text-danger"
+              >
+                <X className="size-4" />
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-lg font-bold">{user.displayName}</h1>
+              <button
+                type="button"
+                aria-label="Edit display name"
+                onClick={() => setEditingDisplayName(user.displayName)}
+                className="shrink-0 rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <Pencil className="size-3.5" />
+              </button>
+            </div>
+          )}
           <p className="text-sm text-muted">{user.email}</p>
           <Button variant="ghost" onClick={logout} className="mt-2 self-start">
             Sign out

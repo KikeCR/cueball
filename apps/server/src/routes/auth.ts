@@ -132,7 +132,20 @@ authRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const body = req.body as UpdateUserSettingsRequest
-    const settings: { allowLongVideos?: boolean; relatedVideosBetaEnabled?: boolean } = {}
+    const settings: {
+      displayName?: string
+      allowLongVideos?: boolean
+      relatedVideosBetaEnabled?: boolean
+    } = {}
+
+    if (body.displayName !== undefined) {
+      const displayName = readTrimmedString(body.displayName, MAX_NAME_LENGTH)
+      if (!displayName) {
+        res.status(400).json({ error: "displayName is required" })
+        return
+      }
+      settings.displayName = displayName
+    }
 
     if (body.allowLongVideos !== undefined) {
       if (typeof body.allowLongVideos !== "boolean") {

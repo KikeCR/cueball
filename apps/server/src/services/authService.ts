@@ -45,7 +45,11 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 export async function updateUserSettings(
   userId: string,
-  settings: { allowLongVideos?: boolean; relatedVideosBetaEnabled?: boolean },
+  settings: {
+    displayName?: string
+    allowLongVideos?: boolean
+    relatedVideosBetaEnabled?: boolean
+  },
 ): Promise<User> {
   return prisma.user.update({
     where: { id: userId },
