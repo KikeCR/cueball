@@ -65,20 +65,20 @@ export function CreateRoomForm() {
         <button
           type="button"
           onClick={() => setMode(CAST_MODE)}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm font-semibold transition-colors ${
             mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
-          <Cast className="size-5" /> Cast
+          <Cast className="h-5 w-auto" /> Cast
         </button>
         <button
           type="button"
           onClick={() => setMode(PLAYLIST_MODE)}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md text-sm font-semibold transition-colors ${
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm font-semibold transition-colors ${
             mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
-          <YouTubeIcon className="size-5" /> Playlist
+          <YouTubeIcon className="h-5 w-auto" /> Playlist
         </button>
       </div>
       <Label>

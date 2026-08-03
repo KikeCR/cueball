@@ -340,7 +340,7 @@ function RoomView({ roomCode }: { roomCode: string }) {
           ) : (
             <>
               <h2 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted">
-                <YouTubeIcon className="size-5" /> YouTube playlist
+                <YouTubeIcon className="h-5 w-auto" /> YouTube playlist
               </h2>
               {room?.youtubePlaylistId ? (
                 <PlaylistShare playlistId={room.youtubePlaylistId} />
