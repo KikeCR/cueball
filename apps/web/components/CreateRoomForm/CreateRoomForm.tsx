@@ -65,19 +65,25 @@ export function CreateRoomForm() {
         <button
           type="button"
           onClick={() => setMode(CAST_MODE)}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm font-semibold transition-colors ${
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors ${
             mode === CAST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
-          <Cast className="h-5 w-auto" /> Cast
+          <Cast
+            className={`h-5 w-auto transition-opacity ${mode === CAST_MODE ? "" : "opacity-50"}`}
+          />{" "}
+          Cast
         </button>
         <button
           type="button"
           onClick={() => setMode(PLAYLIST_MODE)}
-          className={`inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md text-sm font-semibold transition-colors ${
+          className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-sm font-semibold transition-colors ${
             mode === PLAYLIST_MODE ? "bg-surface text-text" : "text-muted"
           }`}
         >
+          {/* Always full opacity, unlike Cast's icon above — YouTube's
+              branding guidelines explicitly prohibit altering or distorting
+              the icon, which dimming it for an "inactive" state would be. */}
           <YouTubeIcon className="h-5 w-auto" /> Playlist
         </button>
       </div>
