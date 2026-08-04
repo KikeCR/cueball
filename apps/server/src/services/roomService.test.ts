@@ -170,12 +170,24 @@ describe("resolveNowPlayingQueueItem", () => {
     expect(prisma.room.update).not.toHaveBeenCalled()
   })
 
-  it("pins whatever currently tops score order when there's no valid pin yet, and persists it", async () => {
+  it("pins whatever was added earliest (not the score leader) when nothing's ever been pinned yet", async () => {
+    // "b" outscores "a" here — the real playlist has never been resynced at
+    // this point, so its actual first item is still whichever was added
+    // earliest, untouched by score. Picking the score leader here was the
+    // real bug: it pinned a freshly-voted video as "already playing" and
+    // pushed the video that's genuinely already loaded on the real
+    // playlist out of position 0 — which is exactly how a 1-vote video
+    // ended up silently skipped forever, since YouTube doesn't rewind to a
+    // position it's already passed.
+    const untouched = [
+      { id: "a", score: 0, position: 0, createdAt: new Date("2026-01-01") },
+      { id: "b", score: 5, position: 1, createdAt: new Date("2026-01-02") },
+    ]
     const result = await resolveNowPlayingQueueItem({
       roomId: "r1",
       mode: RoomMode.PLAYLIST,
       currentPinId: null,
-      unplayedItems,
+      unplayedItems: untouched,
     })
     expect(result).toBe("a")
     expect(prisma.room.update).toHaveBeenCalledWith({
@@ -184,17 +196,26 @@ describe("resolveNowPlayingQueueItem", () => {
     })
   })
 
-  it("re-pins once the previous pin is no longer unplayed (played or removed)", async () => {
+  it("re-pins to the current score leader once the previous pin is no longer unplayed (played or removed)", async () => {
+    // Unlike the "never pinned yet" case above, this scenario already had a
+    // real sync happen — the previous pin advancing means whatever's left
+    // was already ordered by score in that last sync, so the score leader
+    // among what remains deterministically matches the real playlist's new
+    // first item.
+    const afterAdvancing = [
+      { id: "a", score: 0, position: 0, createdAt: new Date("2026-01-01") },
+      { id: "b", score: 5, position: 1, createdAt: new Date("2026-01-02") },
+    ]
     const result = await resolveNowPlayingQueueItem({
       roomId: "r1",
       mode: RoomMode.PLAYLIST,
       currentPinId: "now-played-or-gone",
-      unplayedItems,
+      unplayedItems: afterAdvancing,
     })
-    expect(result).toBe("a")
+    expect(result).toBe("b")
     expect(prisma.room.update).toHaveBeenCalledWith({
       where: { id: "r1" },
-      data: { nowPlayingQueueItemId: "a" },
+      data: { nowPlayingQueueItemId: "b" },
     })
   })
 
