@@ -477,17 +477,16 @@ export async function getRoomState(roomId: string) {
   })
   if (!room) return null
 
-  const nowPlayingQueueItemId = await resolveNowPlayingQueueItem({
-    roomId: room.id,
-    mode: room.mode,
-    currentPinId: room.nowPlayingQueueItemId,
-    unplayedItems: room.queueItems.filter((item) => !item.playedAt),
-  })
-  const queueItems = orderQueueForRoom(
-    room.queueItems,
-    room.manualQueueOrder,
-    nowPlayingQueueItemId,
-  )
+  // Deliberately no pin here — the "now playing" pin exists solely to keep
+  // syncPlaylistOrder (youtubePlaylist.ts) from reordering the real YouTube
+  // playlist item that's already loaded there, which is the one place a
+  // stray reorder is unrecoverable (YouTube silently never plays something
+  // inserted "before" what it's already playing). Applying that same pin
+  // to the app's own canonical order, like an earlier version of this
+  // function did, made the *displayed* queue stop responding to votes once
+  // anything became the top item — score order should always just be score
+  // order here, or drag order should always just be drag order.
+  const queueItems = orderQueueForRoom(room.queueItems, room.manualQueueOrder)
 
   const connected = await getConnectedParticipantIds(roomId)
   const cast = await getCastState(roomId)
