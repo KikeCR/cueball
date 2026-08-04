@@ -457,7 +457,17 @@ export async function resolveNowPlayingQueueItem(params: {
     return params.currentPinId
   }
 
-  const next = sortQueueItems(params.unplayedItems, false)[0] ?? null
+  // No prior pin (brand-new room, or queue emptied and refilled): nothing's
+  // been synced yet, so the real playlist's first item is just whichever
+  // was added earliest — using score order here pinned newly-voted videos
+  // as "already playing" and skipped whatever was actually loaded. Once a
+  // pin has advanced past a played/removed item, score order is correct
+  // again, since the last sync already ordered what's left by score.
+  const next = params.currentPinId
+    ? (sortQueueItems(params.unplayedItems, false)[0] ?? null)
+    : ([...params.unplayedItems].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      )[0] ?? null)
   if (next?.id !== params.currentPinId) {
     await prisma.room.update({
       where: { id: params.roomId },
