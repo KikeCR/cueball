@@ -160,7 +160,35 @@ export function RoomProvider({
     socketRef.current = socket
     setSocket(socket)
 
-    socket.on("connect", () => setConnected(true))
+    let staleTimer: number | undefined
+    const scheduleStaleCheck = (timeoutMs: number) => {
+      if (staleTimer) window.clearTimeout(staleTimer)
+      staleTimer = window.setTimeout(() => {
+        if (!receivedState) {
+          clearParticipantToken(roomCode)
+          setSelfId(null)
+          setReconnecting(false)
+        }
+      }, timeoutMs)
+    }
+
+    socket.on("connect", () => {
+      setConnected(true)
+      // Armed here, not when `io(...)` was first called above — dialing out
+      // to a server that's slow to even respond (a cold start on a
+      // free-tier host that spun down from inactivity is a real case here,
+      // not a hypothetical: that alone can take 30-50+ seconds) would
+      // otherwise burn most or all of this budget before the connection —
+      // let alone the auth handshake — even exists. This should only ever
+      // measure "we're talking to the server, is the token still good,"
+      // which is normally near-instant; a slow network/server getting the
+      // connection itself established is a completely separate concern this
+      // shouldn't be penalized for. Re-reads the token fresh (not the
+      // mount-time closure) so a reconnect after some other tab/action
+      // changed it stays correct.
+      const currentToken = getStoredParticipantToken(roomCode)
+      if (currentToken) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
+    })
     socket.on("disconnect", () => setConnected(false))
     socket.on(SocketEvents.RoomState, (state: RoomStatePayload) => {
       receivedState = true
@@ -186,19 +214,6 @@ export function RoomProvider({
       },
     )
 
-    let staleTimer: number | undefined
-    const scheduleStaleCheck = (timeoutMs: number) => {
-      if (staleTimer) window.clearTimeout(staleTimer)
-      staleTimer = window.setTimeout(() => {
-        if (!receivedState) {
-          clearParticipantToken(roomCode)
-          setSelfId(null)
-          setReconnecting(false)
-        }
-      }, timeoutMs)
-    }
-    if (token) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
-
     // Force a fresh handshake unconditionally rather than checking
     // `socket.connected` first — after a real background suspension that
     // flag can't be trusted, since the transport can die silently without
@@ -209,7 +224,9 @@ export function RoomProvider({
       const currentToken = getStoredParticipantToken(roomCode)
       receivedState = false
       setReconnecting(Boolean(currentToken))
-      if (currentToken) scheduleStaleCheck(RECONNECT_TIMEOUT_MS)
+      // Not scheduling the stale check here — the "connect" handler above
+      // re-arms it once this reconnect actually lands, for the same reason
+      // the initial connection doesn't start its clock until then either.
       socket.disconnect()
       socket.connect()
     }
