@@ -232,7 +232,7 @@ export async function setLoungePlaylist(
   videoId: string,
 ): Promise<LoungeSessionState> {
   const bound = await rebindLoungeSession(session)
-  return sendLoungeAction(bound, {
+  const loaded = await sendLoungeAction(bound, {
     _listId: "",
     __sc: "setPlaylist",
     _currentTime: 0,
@@ -240,6 +240,12 @@ export async function setLoungePlaylist(
     _audioOnly: "false",
     _videoId: videoId,
   })
+  // setPlaylist loads the video but doesn't reliably start playback on its
+  // own — observed as the receiver loading a video and just sitting paused
+  // until someone manually hit play. An explicit play command right after
+  // removes that dependency on manual intervention; harmless if the
+  // receiver already started on its own.
+  return sendLoungeAction(loaded, { __sc: "play" })
 }
 
 /** Appends to the end of the receiver's own live queue — it auto-advances into these itself once the current video ends. */

@@ -233,12 +233,15 @@ describe("lounge commands", () => {
     return fetchMock
   }
 
-  it("setLoungePlaylist rebinds, then sends setPlaylist with req0-prefixed fields", async () => {
+  it("setLoungePlaylist rebinds, sends setPlaylist with req0-prefixed fields, then an explicit play", async () => {
     const fetchMock = stubRebindThenAction()
 
     await setLoungePlaylist(sampleSession, "dQw4w9WgXcQ")
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // rebind, setPlaylist, and a follow-up play — setPlaylist alone doesn't
+    // reliably start playback on the receiver, see setLoungePlaylist's own
+    // comment.
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     const [actionUrl, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(actionUrl).toBe(
       "https://www.youtube.com/api/lounge/bc/bind?SID=sid-1&gsessionid=gsession-1&RID=1&VER=8&v=2&TYPE=bind&t=1&AID=0&CI=0&name=CueBall&id=cueballcueballcueballcueba&device=REMOTE_CONTROL&loungeIdToken=lounge-token",
@@ -250,6 +253,12 @@ describe("lounge commands", () => {
     expect(body.get("req0_videoId")).toBe("dQw4w9WgXcQ")
     expect(body.get("req0_listId")).toBe("")
     expect(body.get("req0_currentIndex")).toBe("-1")
+
+    const [, playInit] = fetchMock.mock.calls[2] as [string, RequestInit]
+    const playBody = new URLSearchParams(playInit.body as string)
+    // reqCount carried forward from the setPlaylist call above (req0), so
+    // this second chained command is req1.
+    expect(playBody.get("req1__sc")).toBe("play")
   })
 
   it("addVideoToLoungeQueue sends addVideo", async () => {

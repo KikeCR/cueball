@@ -173,104 +173,116 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   const room = await prisma.room.findUnique({ where: { id: roomId } })
   const restarted = room ? await restartQueueIfRepeating(room, roomId) : []
 
-  if (nowPlaying.videoId === null) {
-    // The receiver stopped on its own with nothing left in its live queue
-    // to auto-advance into — it won't start playing again by itself. That
-    // can mean the whole DB queue is genuinely empty (repeat may have just
-    // refilled it, handled below), but it can just as easily mean there
-    // ARE unplayed videos sitting in our queue that never actually made it
-    // onto the receiver's own live queue in the first place — e.g. a vote
-    // reorder or a fresh add whose push to the Lounge session silently
-    // failed or hadn't landed yet. Falling back to whatever's still
-    // unplayed (repeat's restarted lap taking priority when there is one)
-    // means the receiver stopping is always treated as "figure out what
-    // should play next," not just "was this a repeat restart" — otherwise
-    // perfectly good, already-voted-for videos are left stranded with
-    // nothing ever pushing them to the TV.
-    const refreshedForFallback = await getRoomState(roomId)
-    const stillUnplayed =
-      refreshedForFallback?.queue.filter((item) => !item.playedAt) ?? []
-    const upcoming = restarted.length > 0 ? restarted : stillUnplayed
-
-    const [upNext, ...rest] = upcoming
-    if (upNext) {
-      // Pushing a whole lap back one video at a time is a handful of
-      // sequential network round-trips to YouTube — long enough that the
-      // room would otherwise look stalled with nothing playing and no
-      // feedback. Flip this on before that loop starts so the UI can show
-      // a loading state instead.
-      await setCastState(roomId, { ...cast, restarting: true })
-      await broadcastRoomState(io, roomId)
-
-      let session: LoungeSessionState
-      try {
-        session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
-      } catch (err) {
-        console.error(
-          `Failed to start playback while restarting the live Cast queue for room ${roomId}`,
-          err,
-        )
-        await setCastState(roomId, { ...cast, restarting: false })
-        await broadcastRoomState(io, roomId)
-        notifyPlaylistSyncFailed(
-          io,
-          roomId,
-          "Couldn't resume the TV's queue. Try skipping or reconnecting.",
-        )
-        return
-      }
-
-      // We've told the receiver to load upNext, but it can take a while to
-      // actually start playing on its end (buffering, cold start after
-      // sitting idle) — sending the command isn't the same as it actually
-      // playing. So we track which video we're waiting on without marking
-      // it playing yet. restarting stays true, and the next poll's normal
-      // "receiver moved to a new video" handling further down is what
-      // confirms it really started and clears the loading state — keeping
-      // the loading indicator honestly in sync with the TV instead of the
-      // app jumping ahead of it.
+  if (nowPlaying.videoId !== null) {
+    // The receiver moved to a video on its own — normally because ours
+    // just finished and it auto-advanced. If that lands on something
+    // actually in our queue, trust it, same as always. If it doesn't match
+    // anything we queued, the receiver's own native "what plays next"
+    // logic won by default (observed: a YouTube Mix still running from
+    // before the TV was ever paired can auto-advance into more of itself
+    // this way, even though clearing it and loading our first video at
+    // connect time looked like it had fully taken over — clearing/loading
+    // apparently doesn't reset whatever the receiver uses to decide what
+    // to auto-play next). Don't just accept losing control of the room:
+    // force-correct onto our own next unplayed item below, the same path
+    // used when the receiver stops outright.
+    const refreshedState = await getRoomState(roomId)
+    const nextItem = refreshedState?.queue.find(
+      (item) => item.youtubeVideoId === nowPlaying.videoId,
+    )
+    if (nextItem) {
       await setCastState(roomId, {
         ...cast,
-        currentQueueItemId: upNext.id,
-        isPlaying: false,
-        restarting: true,
+        currentQueueItemId: nextItem.id,
+        isPlaying: true,
+        restarting: false,
       })
       await broadcastRoomState(io, roomId)
+      return
+    }
+  }
 
-      for (const item of rest) {
-        try {
-          session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
-        } catch (err) {
-          console.error(
-            `Failed to add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while restarting`,
-            err,
-          )
-        }
-      }
-      await setLoungeSessionState(roomId, session)
+  // The receiver stopped on its own with nothing left in its live queue to
+  // auto-advance into, or (see above) drifted into something we never
+  // queued. Either way, it won't correct itself — that can mean the whole
+  // DB queue is genuinely empty (repeat may have just refilled it, handled
+  // below), but it can just as easily mean there ARE unplayed videos
+  // sitting in our queue that never actually made it onto the receiver's
+  // own live queue in the first place — e.g. a vote reorder or a fresh add
+  // whose push to the Lounge session silently failed or hadn't landed yet.
+  // Falling back to whatever's still unplayed (repeat's restarted lap
+  // taking priority when there is one) means this is always treated as
+  // "figure out what should actually play next," not just "was this a
+  // repeat restart" — otherwise perfectly good, already-voted-for videos
+  // are left stranded with nothing ever pushing them to the TV.
+  const refreshedForFallback = await getRoomState(roomId)
+  const stillUnplayed =
+    refreshedForFallback?.queue.filter((item) => !item.playedAt) ?? []
+  const upcoming = restarted.length > 0 ? restarted : stillUnplayed
+
+  const [upNext, ...rest] = upcoming
+  if (upNext) {
+    // Pushing a whole lap back one video at a time is a handful of
+    // sequential network round-trips to YouTube — long enough that the
+    // room would otherwise look stalled with nothing playing and no
+    // feedback. Flip this on before that loop starts so the UI can show
+    // a loading state instead.
+    await setCastState(roomId, { ...cast, restarting: true })
+    await broadcastRoomState(io, roomId)
+
+    let session: LoungeSessionState
+    try {
+      session = await setLoungePlaylist(lounge, upNext.youtubeVideoId)
+    } catch (err) {
+      console.error(
+        `Failed to start playback while restarting the live Cast queue for room ${roomId}`,
+        err,
+      )
+      await setCastState(roomId, { ...cast, restarting: false })
+      await broadcastRoomState(io, roomId)
+      notifyPlaylistSyncFailed(
+        io,
+        roomId,
+        "Couldn't resume the TV's queue. Try skipping or reconnecting.",
+      )
       return
     }
 
+    // We've told the receiver to load upNext, but it can take a while to
+    // actually start playing on its end (buffering, cold start after
+    // sitting idle) — sending the command isn't the same as it actually
+    // playing. So we track which video we're waiting on without marking
+    // it playing yet. restarting stays true, and the next poll's normal
+    // "receiver moved to a new video" handling further up is what confirms
+    // it really started and clears the loading state — keeping the
+    // loading indicator honestly in sync with the TV instead of the app
+    // jumping ahead of it.
     await setCastState(roomId, {
       ...cast,
-      currentQueueItemId: null,
+      currentQueueItemId: upNext.id,
       isPlaying: false,
-      restarting: false,
+      restarting: true,
     })
     await broadcastRoomState(io, roomId)
+
+    for (const item of rest) {
+      try {
+        session = await addVideoToLoungeQueue(session, item.youtubeVideoId)
+      } catch (err) {
+        console.error(
+          `Failed to add ${item.youtubeVideoId} to the live Cast queue for room ${roomId} while restarting`,
+          err,
+        )
+      }
+    }
+    await setLoungeSessionState(roomId, session)
     return
   }
 
-  // Ordinary case: the receiver auto-advanced into a new video on its own.
-  const refreshedState = await getRoomState(roomId)
-  const nextItem = refreshedState?.queue.find(
-    (item) => item.youtubeVideoId === nowPlaying.videoId,
-  )
-
   await setCastState(roomId, {
     ...cast,
-    currentQueueItemId: nextItem?.id ?? null,
-    isPlaying: true,
+    currentQueueItemId: null,
+    isPlaying: false,
     restarting: false,
   })
   await broadcastRoomState(io, roomId)
