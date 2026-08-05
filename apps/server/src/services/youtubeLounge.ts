@@ -232,7 +232,11 @@ export async function setLoungePlaylist(
   videoId: string,
 ): Promise<LoungeSessionState> {
   const bound = await rebindLoungeSession(session)
-  const loaded = await sendLoungeAction(bound, {
+  // No follow-up play command — sending one unconditionally risked toggling
+  // an already-playing video into pausing itself. castLoungePolling.ts
+  // checks the receiver's actual state on the next tick and only sends
+  // play if it's genuinely still paused.
+  return sendLoungeAction(bound, {
     _listId: "",
     __sc: "setPlaylist",
     _currentTime: 0,
@@ -240,12 +244,6 @@ export async function setLoungePlaylist(
     _audioOnly: "false",
     _videoId: videoId,
   })
-  // setPlaylist loads the video but doesn't reliably start playback on its
-  // own — observed as the receiver loading a video and just sitting paused
-  // until someone manually hit play. An explicit play command right after
-  // removes that dependency on manual intervention; harmless if the
-  // receiver already started on its own.
-  return sendLoungeAction(loaded, { __sc: "play" })
 }
 
 /** Appends to the end of the receiver's own live queue — it auto-advances into these itself once the current video ends. */
@@ -291,6 +289,9 @@ export async function seekLoungeTo(
   return sendLoungeAction(bound, { __sc: "seekTo", _newTime: seconds })
 }
 
+/** YouTube's standard player-state codes, as sent (as a numeric string) in the raw event — same convention as the IFrame Player API. */
+export const LOUNGE_STATE_PAUSED = "2"
+
 export interface LoungeNowPlaying {
   /**
    * Null covers two distinct things the receiver reports the same way: the
@@ -304,6 +305,8 @@ export interface LoungeNowPlaying {
    * null, see below).
    */
   videoId: string | null
+  /** Raw player-state string (see LOUNGE_STATE_PAUSED), or null if the event didn't include one. */
+  state: string | null
 }
 
 /**
@@ -381,7 +384,8 @@ export async function getLoungeNowPlaying(
         typeof data.videoId === "string" && data.videoId.length > 0
           ? data.videoId
           : null
-      nowPlaying = { videoId }
+      const state = typeof data.state === "string" ? data.state : null
+      nowPlaying = { videoId, state }
     }
     return { reachable: true, nowPlaying }
   } catch {

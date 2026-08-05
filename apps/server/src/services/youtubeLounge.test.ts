@@ -233,15 +233,15 @@ describe("lounge commands", () => {
     return fetchMock
   }
 
-  it("setLoungePlaylist rebinds, sends setPlaylist with req0-prefixed fields, then an explicit play", async () => {
+  it("setLoungePlaylist rebinds, then sends setPlaylist with req0-prefixed fields", async () => {
     const fetchMock = stubRebindThenAction()
 
     await setLoungePlaylist(sampleSession, "dQw4w9WgXcQ")
 
-    // rebind, setPlaylist, and a follow-up play — setPlaylist alone doesn't
-    // reliably start playback on the receiver, see setLoungePlaylist's own
-    // comment.
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    // rebind, then setPlaylist — no unconditional follow-up play command;
+    // castLoungePolling.ts sends one separately, but only after actually
+    // observing the receiver report itself paused.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     const [actionUrl, actionInit] = fetchMock.mock.calls[1] as [string, RequestInit]
     expect(actionUrl).toBe(
       "https://www.youtube.com/api/lounge/bc/bind?SID=sid-1&gsessionid=gsession-1&RID=1&VER=8&v=2&TYPE=bind&t=1&AID=0&CI=0&name=CueBall&id=cueballcueballcueballcueba&device=REMOTE_CONTROL&loungeIdToken=lounge-token",
@@ -253,12 +253,6 @@ describe("lounge commands", () => {
     expect(body.get("req0_videoId")).toBe("dQw4w9WgXcQ")
     expect(body.get("req0_listId")).toBe("")
     expect(body.get("req0_currentIndex")).toBe("-1")
-
-    const [, playInit] = fetchMock.mock.calls[2] as [string, RequestInit]
-    const playBody = new URLSearchParams(playInit.body as string)
-    // reqCount carried forward from the setPlaylist call above (req0), so
-    // this second chained command is req1.
-    expect(playBody.get("req1__sc")).toBe("play")
   })
 
   it("addVideoToLoungeQueue sends addVideo", async () => {
@@ -345,7 +339,7 @@ describe("getLoungeNowPlaying", () => {
 
     expect(result).toEqual({
       reachable: true,
-      nowPlaying: { videoId: "dQw4w9WgXcQ" },
+      nowPlaying: { videoId: "dQw4w9WgXcQ", state: null },
     })
   })
 
@@ -362,7 +356,7 @@ describe("getLoungeNowPlaying", () => {
 
     expect(result).toEqual({
       reachable: true,
-      nowPlaying: { videoId: "new-video" },
+      nowPlaying: { videoId: "new-video", state: null },
     })
   })
 
@@ -375,7 +369,25 @@ describe("getLoungeNowPlaying", () => {
 
     const result = await getLoungeNowPlaying(sampleSession)
 
-    expect(result).toEqual({ reachable: true, nowPlaying: { videoId: null } })
+    expect(result).toEqual({
+      reachable: true,
+      nowPlaying: { videoId: null, state: "-1" },
+    })
+  })
+
+  it("reports the paused state when the receiver sends one", async () => {
+    const raw = '[[0,["nowPlaying",{"state":"2","videoId":"dQw4w9WgXcQ"}]]]'
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(raw) }),
+    )
+
+    const result = await getLoungeNowPlaying(sampleSession)
+
+    expect(result).toEqual({
+      reachable: true,
+      nowPlaying: { videoId: "dQw4w9WgXcQ", state: "2" },
+    })
   })
 
   it("reports reachable with no nowPlaying when there's no nowPlaying event", async () => {

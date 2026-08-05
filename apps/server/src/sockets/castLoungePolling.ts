@@ -15,6 +15,8 @@ import { prisma } from "../services/prisma.js"
 import {
   addVideoToLoungeQueue,
   getLoungeNowPlaying,
+  LOUNGE_STATE_PAUSED,
+  sendLoungeTransportCommand,
   setLoungePlaylist,
   type LoungeSessionState,
 } from "../services/youtubeLounge.js"
@@ -65,6 +67,28 @@ function roomIdFromLoungeKey(key: string): string | null {
  */
 export async function pollRoom(io: Server, roomId: string): Promise<void> {
   await withLoungeLock(roomId, () => reconcileRoom(io, roomId))
+}
+
+/**
+ * Sends an explicit play command, but only once we've actually observed the
+ * receiver reporting itself paused — not unconditionally after every load.
+ * setPlaylist doesn't reliably auto-start playback on its own, but blindly
+ * sending play regardless of real state risks colliding with a video that
+ * already started fine on its own, which is a very plausible way to end up
+ * with videos that intermittently pause themselves for no visible reason.
+ */
+async function resumeIfPaused(
+  roomId: string,
+  lounge: LoungeSessionState,
+  state: string | null,
+): Promise<void> {
+  if (state !== LOUNGE_STATE_PAUSED) return
+  try {
+    const updated = await sendLoungeTransportCommand(lounge, "play")
+    await setLoungeSessionState(roomId, updated)
+  } catch (err) {
+    console.error(`Failed to resume paused playback for room ${roomId}`, err)
+  }
 }
 
 async function reconcileRoom(io: Server, roomId: string): Promise<void> {
@@ -121,6 +145,7 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
   if ((currentItem?.youtubeVideoId ?? null) === nowPlaying.videoId) {
     pendingStopTicks.delete(roomId)
     if (cast.restarting && nowPlaying.videoId !== null) {
+      await resumeIfPaused(roomId, lounge, nowPlaying.state)
       await setCastState(roomId, { ...cast, isPlaying: true, restarting: false })
       await broadcastRoomState(io, roomId)
     }
@@ -191,6 +216,7 @@ async function reconcileRoom(io: Server, roomId: string): Promise<void> {
       (item) => item.youtubeVideoId === nowPlaying.videoId,
     )
     if (nextItem) {
+      await resumeIfPaused(roomId, lounge, nowPlaying.state)
       await setCastState(roomId, {
         ...cast,
         currentQueueItemId: nextItem.id,
